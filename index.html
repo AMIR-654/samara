@@ -3,390 +3,259 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>سمارة — لوحة التحكم</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <title>Samara — لوحة الإدارة</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
-  <!-- Sidebar -->
-  <aside class="sidebar" id="sidebar">
-    <div class="sidebar-brand">
-      <div class="brand-icon">س</div>
-      <div class="brand-text">
-        <span class="brand-name">سمارة</span>
-        <span class="brand-sub">لوحة التحكم</span>
+  <header>
+    <div class="container header-inner">
+      <h1>Samara <span class="sub">لوحة الإدارة</span></h1>
+      <div class="header-status">
+        <span class="status-dot" id="fbStatus"></span>
+        <span id="fbStatusText">جاري الاتصال بـ Firebase...</span>
       </div>
     </div>
+  </header>
 
-    <nav class="sidebar-nav">
-      <button class="nav-item active" onclick="showSection('categories')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-        التصنيفات
-      </button>
-      <button class="nav-item" onclick="showSection('items')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-        العناصر
-      </button>
-      <button class="nav-item" onclick="showSection('announcements')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-        الإعلانات
-      </button>
+  <main class="container">
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="categories">الفئات</button>
+      <button class="tab" data-tab="global">الأزرار السريعة</button>
+      <button class="tab" data-tab="settings">الإعدادات</button>
     </nav>
 
-    <div class="sidebar-stats">
-      <div class="stat-card">
-        <span class="stat-value" id="totalCats">0</span>
-        <span class="stat-label">تصنيف</span>
+    <!-- Categories Tab -->
+    <section id="tab-categories" class="tab-content active">
+      <div class="section-header">
+        <h2>إدارة الفئات</h2>
+        <button class="btn btn-primary" id="addCategoryBtn">+ إضافة فئة</button>
       </div>
-      <div class="stat-card">
-        <span class="stat-value" id="totalItems">0</span>
-        <span class="stat-label">عنصر</span>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الترتيب</th>
+              <th>المعرف</th>
+              <th>العنوان</th>
+              <th>الأيقونة</th>
+              <th>الحالة</th>
+              <th>العناصر</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="categoriesBody"></tbody>
+        </table>
       </div>
-      <div class="stat-card" style="grid-column:1/-1">
-        <span class="stat-value" id="totalAnnouncements">0</span>
-        <span class="stat-label">إعلان</span>
+    </section>
+
+    <!-- Global Buttons Tab -->
+    <section id="tab-global" class="tab-content">
+      <div class="section-header">
+        <h2>الأزرار السريعة</h2>
+        <button class="btn btn-primary" id="addGlobalBtn">+ إضافة زر</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الترتيب</th>
+              <th>المعرف</th>
+              <th>العنوان</th>
+              <th>الأيقونة</th>
+              <th>الرابط</th>
+              <th>الحالة</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="globalButtonsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Settings Tab -->
+    <section id="tab-settings" class="tab-content">
+      <h2>إعدادات التطبيق</h2>
+      <form id="settingsForm" class="settings-form">
+        <div class="form-group">
+          <label>رقم الإصدار</label>
+          <input type="number" id="settingsVersion" min="1" step="1" />
+        </div>
+        <div class="form-group">
+          <label>المظهر الافتراضي</label>
+          <select id="settingsTheme">
+            <option value="system">حسب النظام</option>
+            <option value="light">فاتح</option>
+            <option value="dark">داكن</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>وضع الصيانة</label>
+          <select id="settingsMaintenance">
+            <option value="false">معطل</option>
+            <option value="true">مفعل</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">حفظ الإعدادات</button>
+      </form>
+    </section>
+
+    <!-- Items Modal -->
+    <div class="modal-overlay" id="itemsModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="itemsModalTitle">إدارة العناصر</h3>
+          <button class="modal-close" id="itemsModalClose">&times;</button>
+        </div>
+        <div class="modal-body" id="itemsModalBody"></div>
       </div>
     </div>
-  </aside>
 
-  <!-- Mobile overlay -->
-  <div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+    <!-- Category Modal -->
+    <div class="modal-overlay" id="catModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="catModalTitle">إضافة/تعديل فئة</h3>
+          <button class="modal-close" id="catModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="catForm">
+            <input type="hidden" id="catId" />
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="catTitle" required />
+            </div>
+            <div class="form-group">
+              <label>الأيقونة</label>
+              <input type="text" id="catIcon" placeholder="wifi, home, bank..." />
+            </div>
+            <div class="form-group">
+              <label>كلمة المرور (اختياري)</label>
+              <input type="text" id="catPassword" />
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="catSortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="catStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
 
-  <!-- Main -->
-  <main class="main" id="main">
-    <!-- Top bar -->
-    <header class="topbar">
-      <button class="menu-btn" onclick="toggleSidebar()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
-      <div class="topbar-search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" id="globalSearch" placeholder="بحث في التصنيفات والعناصر…" oninput="handleSearch(this.value)" />
+    <!-- Global Button Modal -->
+    <div class="modal-overlay" id="globalModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="globalModalTitle">إضافة/تعديل زر سريع</h3>
+          <button class="modal-close" id="globalModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="globalForm">
+            <input type="hidden" id="globalId" />
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="globalTitle" required />
+            </div>
+            <div class="form-group">
+              <label>الأيقونة</label>
+              <input type="text" id="globalIcon" placeholder="login, card, qr..." />
+            </div>
+            <div class="form-group">
+              <label>الرابط</label>
+              <input type="url" id="globalUrl" />
+            </div>
+            <div class="form-group">
+              <label>الإجراء</label>
+              <select id="globalAction">
+                <option value="webview">WebView</option>
+                <option value="last_card">آخر بطاقة</option>
+                <option value="qr_scanner">QR Scanner</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>كلمة المرور (اختياري)</label>
+              <input type="text" id="globalPassword" />
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="globalSortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="globalStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
       </div>
-      <button class="topbar-reload" onclick="loadAll()" title="تحديث">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-      </button>
-    </header>
+    </div>
 
-    <!-- Categories Section -->
-    <section class="section active" id="section-categories">
-      <div class="section-header">
-        <div>
-          <h1 class="section-title">التصنيفات</h1>
-          <p class="section-sub">إدارة تصنيفات التطبيق وترتيبها</p>
+    <!-- Item Modal -->
+    <div class="modal-overlay" id="itemModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="itemModalTitle">إضافة/تعديل عنصر</h3>
+          <button class="modal-close" id="itemModalClose">&times;</button>
         </div>
-        <button class="btn-primary" onclick="openCategoryModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          تصنيف جديد
-        </button>
-      </div>
-      <div class="card-grid" id="categoriesGrid">
-        <div class="loading-state">
-          <div class="spinner"></div>
-          <span>جارٍ التحميل…</span>
+        <div class="modal-body">
+          <form id="itemForm">
+            <input type="hidden" id="itemParentCategory" />
+            <input type="hidden" id="itemId" />
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="itemTitle" required />
+            </div>
+            <div class="form-group">
+              <label>الأيقونة</label>
+              <input type="text" id="itemIcon" placeholder="login, card, qr..." />
+            </div>
+            <div class="form-group">
+              <label>الرابط</label>
+              <input type="url" id="itemUrl" />
+            </div>
+            <div class="form-group">
+              <label>الإجراء</label>
+              <select id="itemAction">
+                <option value="webview">WebView</option>
+                <option value="last_card">آخر بطاقة</option>
+                <option value="qr_scanner">QR Scanner</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>كلمة المرور (اختياري)</label>
+              <input type="text" id="itemPassword" />
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="itemSortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="itemStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
         </div>
       </div>
-    </section>
-
-    <!-- Items Section -->
-    <section class="section" id="section-items">
-      <div class="section-header">
-        <div>
-          <h1 class="section-title">العناصر</h1>
-          <p class="section-sub">إدارة عناصر التصنيفات</p>
-        </div>
-        <div class="header-actions">
-          <select class="select-cat" id="filterCat" onchange="filterItemsByCategory(this.value)">
-            <option value="">كل التصنيفات</option>
-          </select>
-          <button class="btn-primary" onclick="openItemModal()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            عنصر جديد
-          </button>
-        </div>
-      </div>
-      <div class="card-grid" id="itemsGrid">
-        <div class="loading-state">
-          <div class="spinner"></div>
-          <span>جارٍ التحميل…</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- Announcements Section -->
-    <section class="section" id="section-announcements">
-      <div class="section-header">
-        <div>
-          <h1 class="section-title">الإعلانات</h1>
-          <p class="section-sub">إدارة الإعلانات التي تظهر للمستخدمين في التطبيق</p>
-        </div>
-        <button class="btn-primary" onclick="openAnnouncementModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          إعلان جديد
-        </button>
-      </div>
-      <div class="ann-list" id="announcementsList">
-        <div class="loading-state"><div class="spinner"></div><span>جارٍ التحميل…</span></div>
-      </div>
-    </section>
+    </div>
   </main>
 
-  <!-- ===== ANNOUNCEMENT MODAL ===== -->
-  <div class="modal-backdrop" id="announcementModal">
-    <div class="modal modal-wide">
-      <div class="modal-header">
-        <h2 id="annModalTitle">إعلان جديد</h2>
-        <button class="modal-close" onclick="closeAnnouncementModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="annId" />
-        <div class="form-row">
-          <div class="form-group">
-            <label>العنوان <span class="req">*</span></label>
-            <input type="text" id="annTitle" placeholder="عنوان الإعلان" />
-          </div>
-          <div class="form-group">
-            <label>النوع</label>
-            <select id="annType">
-              <option value="info">معلومات</option>
-              <option value="warning">تحذير</option>
-              <option value="success">نجاح</option>
-              <option value="danger">خطر</option>
-              <option value="promo">ترويجي</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-group">
-          <label>الرسالة <span class="req">*</span></label>
-          <textarea id="annMessage" placeholder="نص الإعلان الذي سيظهر للمستخدم…" rows="3"></textarea>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>رابط الإجراء (اختياري)</label>
-            <input type="url" id="annUrl" placeholder="https://…" />
-          </div>
-          <div class="form-group">
-            <label>نص زر الإجراء</label>
-            <input type="text" id="annBtnText" placeholder="مثال: اعرف أكثر" />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>تاريخ الانتهاء (اختياري)</label>
-            <input type="datetime-local" id="annExpiry" />
-          </div>
-          <div class="form-group">
-            <label>الأولوية</label>
-            <input type="number" id="annPriority" placeholder="0" min="0" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label>الحالة</label>
-          <div class="toggle-row">
-            <span>مفعّل (يظهر للمستخدمين)</span>
-            <label class="toggle">
-              <input type="checkbox" id="annStatus" checked />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-ghost" onclick="closeAnnouncementModal()">إلغاء</button>
-        <button class="btn-primary" onclick="saveAnnouncement()">نشر الإعلان</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== CATEGORY MODAL ===== -->
-  <div class="modal-backdrop" id="categoryModal">
-    <div class="modal">
-      <div class="modal-header">
-        <h2 id="catModalTitle">تصنيف جديد</h2>
-        <button class="modal-close" onclick="closeCategoryModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="catId" />
-        <div class="form-row">
-          <div class="form-group">
-            <label>العنوان <span class="req">*</span></label>
-            <input type="text" id="catTitle" placeholder="مثال: البطاقات الميدانية" />
-          </div>
-          <div class="form-group">
-            <label>الأيقونة</label>
-            <input type="text" id="catIcon" placeholder="رابط الأيقونة أو emoji" />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>كلمة المرور</label>
-            <input type="password" id="catPassword" placeholder="اختياري" />
-          </div>
-          <div class="form-group">
-            <label>الترتيب</label>
-            <input type="number" id="catOrder" placeholder="0" min="0" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label>الحالة</label>
-          <div class="toggle-row">
-            <span>مفعّل</span>
-            <label class="toggle">
-              <input type="checkbox" id="catStatus" checked />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-ghost" onclick="closeCategoryModal()">إلغاء</button>
-        <button class="btn-primary" onclick="saveCategory()">حفظ</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== ITEM MODAL ===== -->
-  <div class="modal-backdrop" id="itemModal">
-    <div class="modal modal-wide">
-      <div class="modal-header">
-        <h2 id="itemModalTitle">عنصر جديد</h2>
-        <button class="modal-close" onclick="closeItemModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="itemId" />
-        <input type="hidden" id="itemCatId" />
-        <div class="form-group">
-          <label>التصنيف <span class="req">*</span></label>
-          <select id="itemCatSelect">
-            <option value="">اختر تصنيفاً…</option>
-          </select>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>العنوان <span class="req">*</span></label>
-            <input type="text" id="itemTitle" placeholder="اسم العنصر" />
-          </div>
-          <div class="form-group">
-            <label>الأيقونة</label>
-            <input type="text" id="itemIcon" placeholder="رابط أو emoji" />
-          </div>
-        </div>
-        <div class="form-group">
-          <label>الرابط (URL)</label>
-          <input type="url" id="itemUrl" placeholder="https://…" />
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>الإجراء (Action)</label>
-            <input type="text" id="itemAction" placeholder="مثال: open_url" />
-          </div>
-          <div class="form-group">
-            <label>كلمة المرور</label>
-            <input type="password" id="itemPassword" placeholder="اختياري" />
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>الترتيب</label>
-            <input type="number" id="itemOrder" placeholder="0" min="0" />
-          </div>
-          <div class="form-group">
-            <label>الحالة</label>
-            <div class="toggle-row">
-              <span>مفعّل</span>
-              <label class="toggle">
-                <input type="checkbox" id="itemStatus" checked />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-ghost" onclick="closeItemModal()">إلغاء</button>
-        <button class="btn-primary" onclick="saveItem()">حفظ</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== PASSWORD MODAL ===== -->
-  <div class="modal-backdrop" id="passwordModal">
-    <div class="modal modal-sm">
-      <div class="modal-header">
-        <h2>تغيير كلمة المرور</h2>
-        <button class="modal-close" onclick="closePasswordModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="pwType" />
-        <input type="hidden" id="pwDocId" />
-        <input type="hidden" id="pwCatId" />
-        <div class="form-group">
-          <label>كلمة المرور الجديدة</label>
-          <input type="password" id="pwNew" placeholder="أدخل كلمة المرور…" />
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-ghost" onclick="closePasswordModal()">إلغاء</button>
-        <button class="btn-primary" onclick="savePassword()">حفظ</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== URL MODAL ===== -->
-  <div class="modal-backdrop" id="urlModal">
-    <div class="modal modal-sm">
-      <div class="modal-header">
-        <h2>تغيير الرابط</h2>
-        <button class="modal-close" onclick="closeUrlModal()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="urlDocId" />
-        <input type="hidden" id="urlCatId" />
-        <div class="form-group">
-          <label>الرابط الجديد</label>
-          <input type="url" id="urlNew" placeholder="https://…" />
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-ghost" onclick="closeUrlModal()">إلغاء</button>
-        <button class="btn-primary" onclick="saveUrl()">حفظ</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===== CONFIRM MODAL ===== -->
-  <div class="modal-backdrop" id="confirmModal">
-    <div class="modal modal-sm">
-      <div class="modal-header">
-        <h2>تأكيد الحذف</h2>
-      </div>
-      <div class="modal-body">
-        <p id="confirmMsg" style="color:var(--text-secondary);line-height:1.7;">هل أنت متأكد من الحذف؟ لا يمكن التراجع عن هذا الإجراء.</p>
-      </div>
-      <div class="modal-footer">
-        <button class="btn-ghost" onclick="closeConfirm()">إلغاء</button>
-        <button class="btn-danger" id="confirmOk">حذف</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Notifications -->
-  <div id="notifContainer"></div>
-
-  <!-- Firebase -->
-  <script type="module" src="app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

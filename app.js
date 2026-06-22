@@ -1,834 +1,432 @@
-// ===== Firebase SDK v10 Modular =====
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import {
-  getFirestore, collection, doc,
-  getDocs, getDoc, addDoc, setDoc, updateDoc, deleteDoc,
-  orderBy, query, writeBatch
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-
-// ===== Config =====
 const firebaseConfig = {
   apiKey: "AIzaSyD15jjDHKnJJSTIiS1qkqHOp8LGN7gIRD4",
   authDomain: "samara-560ad.firebaseapp.com",
   projectId: "samara-560ad",
   storageBucket: "samara-560ad.firebasestorage.app",
   messagingSenderId: "838230946676",
-  appId: "1:838230946676:web:9ac33c5ee94f47c8407221"
+  appId: "1:838230946676:web:9ac33c5ee94f47c8407221",
 };
 
-const app = initializeApp(firebaseConfig);
-const db  = getFirestore(app);
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
 
 // ===== State =====
-let categories = [];   // [{ id, ...data, items:[...] }]
-let allItems   = [];   // flat list
-let dragSrc    = null;
+let categoriesCache = [];
+let globalButtonsCache = [];
 
-// ===== Init =====
-window.addEventListener('DOMContentLoaded', () => {
-  loadAll();
+// ===== DOM refs =====
+const $ = (id) => document.getElementById(id);
+const categoriesBody = $("categoriesBody");
+const globalButtonsBody = $("globalButtonsBody");
+
+// ===== Firebase Status =====
+const fbStatus = $("fbStatus");
+const fbStatusText = $("fbStatusText");
+
+db.app
+  .firestore()
+  .enableNetwork()
+  .then(() => {
+    fbStatus.classList.add("connected");
+    fbStatusText.textContent = "Firebase متصل";
+  })
+  .catch(() => {
+    fbStatus.classList.add("error");
+    fbStatusText.textContent = "فشل الاتصال";
+  });
+
+// ===== Helpers =====
+function statusBadge(status) {
+  const s = status || "active";
+  const label = s === "active" ? "نشط" : "معطل";
+  return `<span class="status-badge ${s}">${label}</span>`;
+}
+
+function sortByOrder(arr) {
+  return [...arr].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
+}
+
+function getIconSvg(name) {
+  return name || "radio-button-off";
+}
+
+// ===== Tabs =====
+document.querySelectorAll(".tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach((t) => t.classList.remove("active"));
+    tab.classList.add("active");
+    $(`tab-${tab.dataset.tab}`).classList.add("active");
+  });
 });
 
-// ===== Load All =====
-window.loadAll = async function () {
-  showLoading();
-  categories = [];
-  allItems   = [];
-
-  try {
-    const catsSnap = await getDocs(
-      query(collection(db, 'categories'), orderBy('sortOrder', 'asc'))
+// ===== Categories =====
+async function loadCategories() {
+  const snap = await db.collection("categories").get();
+  categoriesCache = [];
+  for (const doc of snap.docs) {
+    const data = doc.data();
+    const itemsSnap = await doc.ref.collection("items").get();
+    const items = [];
+    itemsSnap.forEach((i) =>
+      items.push({ id: i.id, ...i.data() })
     );
-
-    for (const catDoc of catsSnap.docs) {
-      const catData = { id: catDoc.id, ...catDoc.data(), items: [] };
-
-      const itemsSnap = await getDocs(
-        query(collection(db, 'categories', catDoc.id, 'items'), orderBy('sortOrder', 'asc'))
-      );
-
-      itemsSnap.forEach(itemDoc => {
-        const item = { id: itemDoc.id, catId: catDoc.id, catTitle: catData.title, ...itemDoc.data() };
-        catData.items.push(item);
-        allItems.push(item);
-      });
-
-      categories.push(catData);
-    }
-
-    renderCategories();
-    renderItems();
-    updateStats();
-    populateCatSelects();
-  } catch (e) {
-    notify('خطأ في التحميل: ' + e.message, 'error');
-    console.error(e);
+    categoriesCache.push({ id: doc.id, ...data, items: sortByOrder(items) });
   }
-};
-
-// ===== Render Categories =====
-function renderCategories(list = categories) {
-  const grid = document.getElementById('categoriesGrid');
-  if (!list.length) {
-    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">📂</div><span>لا توجد تصنيفات بعد</span></div>`;
-    return;
-  }
-  grid.innerHTML = list.map(cat => buildCatCard(cat)).join('');
-  attachCatDrag();
-}
-
-function buildCatCard(cat) {
-  const icon = cat.icon
-    ? (cat.icon.startsWith('http') ? `<img src="${cat.icon}" alt="" />` : cat.icon)
-    : '📁';
-  const statusClass = cat.status !== false ? 'on' : 'off';
-  const statusLabel = cat.status !== false ? 'مفعّل' : 'معطّل';
-
-  return `
-  <div class="cat-card" draggable="true" data-id="${cat.id}" data-type="cat">
-    <div class="cat-card-header">
-      <div class="drag-handle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1" fill="currentColor"/><circle cx="15" cy="5" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="19" r="1" fill="currentColor"/><circle cx="15" cy="19" r="1" fill="currentColor"/></svg>
-      </div>
-      <div class="cat-icon">${icon}</div>
-      <div class="cat-meta">
-        <div class="cat-title">${cat.title || '—'}</div>
-        <div class="cat-id">${cat.id}</div>
-      </div>
-      <span class="cat-badge ${statusClass}">${statusLabel}</span>
-    </div>
-    <div class="cat-card-body">
-      <div class="cat-info">
-        <div class="info-chip">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          ترتيب: ${cat.sortOrder ?? 0}
-        </div>
-        ${cat.password ? `<div class="info-chip">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          محمي
-        </div>` : ''}
-        <div class="info-chip">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          ${cat.items.length} عنصر
-        </div>
-      </div>
-      <div class="cat-card-actions">
-        <button class="btn-icon accent" title="تعديل" onclick="openCategoryModal('${cat.id}')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </button>
-        <button class="btn-icon ${cat.status !== false ? 'danger' : 'success'}" title="${cat.status !== false ? 'تعطيل' : 'تفعيل'}" onclick="toggleCatStatus('${cat.id}', ${cat.status !== false})">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${cat.status !== false ? '<path d="M18.36 6.64A9 9 0 0 1 20.77 15"/><path d="M6.16 6.16a9 9 0 1 0 12.68 12.68"/><line x1="2" y1="2" x2="22" y2="22"/>' : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'}</svg>
-        </button>
-        <button class="btn-icon accent" title="تغيير كلمة المرور" onclick="openPasswordModal('cat','${cat.id}','')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        </button>
-        <button class="btn-icon accent" title="إضافة عنصر" onclick="openItemModal(null,'${cat.id}')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        </button>
-        <button class="btn-icon danger" title="حذف" onclick="confirmDelete('cat','${cat.id}','')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        </button>
-      </div>
-    </div>
-  </div>`;
-}
-
-// ===== Render Items =====
-function renderItems(list = allItems, catFilter = '') {
-  const grid = document.getElementById('itemsGrid');
-  let items = list;
-  if (catFilter) items = items.filter(i => i.catId === catFilter);
-
-  if (!items.length) {
-    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><span>لا توجد عناصر</span></div>`;
-    return;
-  }
-  grid.innerHTML = items.map(item => buildItemCard(item)).join('');
-  attachItemDrag();
-}
-
-function buildItemCard(item) {
-  const icon = item.icon
-    ? (item.icon.startsWith('http') ? `<img src="${item.icon}" alt="" />` : item.icon)
-    : '🔗';
-  const statusClass = item.status !== false ? 'on' : 'off';
-  const statusLabel = item.status !== false ? 'مفعّل' : 'معطّل';
-
-  return `
-  <div class="item-card" draggable="true" data-id="${item.id}" data-cat="${item.catId}" data-type="item">
-    <div class="drag-handle">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1" fill="currentColor"/><circle cx="15" cy="5" r="1" fill="currentColor"/><circle cx="9" cy="12" r="1" fill="currentColor"/><circle cx="15" cy="12" r="1" fill="currentColor"/><circle cx="9" cy="19" r="1" fill="currentColor"/><circle cx="15" cy="19" r="1" fill="currentColor"/></svg>
-    </div>
-    <div class="item-icon">${icon}</div>
-    <div class="item-meta">
-      <div class="item-title">${item.title || '—'}</div>
-      ${item.url ? `<div class="item-url">${item.url}</div>` : ''}
-      <span class="item-cat-tag">${item.catTitle || item.catId}</span>
-    </div>
-    <span class="item-badge ${statusClass}">${statusLabel}</span>
-    <div class="item-actions">
-      <button class="btn-icon accent" title="تعديل" onclick="openItemModal('${item.id}','${item.catId}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-      </button>
-      <button class="btn-icon ${item.status !== false ? 'danger' : 'success'}" title="${item.status !== false ? 'تعطيل' : 'تفعيل'}" onclick="toggleItemStatus('${item.id}','${item.catId}',${item.status !== false})">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${item.status !== false ? '<path d="M18.36 6.64A9 9 0 0 1 20.77 15"/><path d="M6.16 6.16a9 9 0 1 0 12.68 12.68"/><line x1="2" y1="2" x2="22" y2="22"/>' : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'}</svg>
-      </button>
-      <button class="btn-icon accent" title="تغيير الرابط" onclick="openUrlModal('${item.id}','${item.catId}','${(item.url || '').replace(/'/g,"\\'")}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-      </button>
-      <button class="btn-icon accent" title="تغيير كلمة المرور" onclick="openPasswordModal('item','${item.id}','${item.catId}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      </button>
-      <button class="btn-icon danger" title="حذف" onclick="confirmDelete('item','${item.id}','${item.catId}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-      </button>
-    </div>
-  </div>`;
-}
-
-// ===== Stats =====
-function updateStats() {
-  document.getElementById('totalCats').textContent  = categories.length;
-  document.getElementById('totalItems').textContent = allItems.length;
-}
-
-function populateCatSelects() {
-  const opts = categories.map(c => `<option value="${c.id}">${c.title}</option>`).join('');
-  document.getElementById('filterCat').innerHTML   = `<option value="">كل التصنيفات</option>${opts}`;
-  document.getElementById('itemCatSelect').innerHTML = `<option value="">اختر تصنيفاً…</option>${opts}`;
-}
-
-// ===== Loading =====
-function showLoading() {
-  document.getElementById('categoriesGrid').innerHTML = `<div class="loading-state"><div class="spinner"></div><span>جارٍ التحميل…</span></div>`;
-  document.getElementById('itemsGrid').innerHTML      = `<div class="loading-state"><div class="spinner"></div><span>جارٍ التحميل…</span></div>`;
-}
-
-// ===== Navigation =====
-window.showSection = function (name) {
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('section-' + name).classList.add('active');
-  const idx = name === 'categories' ? 0 : 1;
-  document.querySelectorAll('.nav-item')[idx].classList.add('active');
-};
-
-// ===== Sidebar toggle (mobile) =====
-window.toggleSidebar = function () {
-  document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('overlay').classList.toggle('active');
-};
-window.closeSidebar = function () {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('overlay').classList.remove('active');
-};
-
-// ===== Search =====
-window.handleSearch = function (q) {
-  q = q.trim().toLowerCase();
-  if (!q) {
-    renderCategories();
-    renderItems();
-    return;
-  }
-  const filteredCats  = categories.filter(c =>
-    (c.title || '').toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
-  );
-  const filteredItems = allItems.filter(i =>
-    (i.title || '').toLowerCase().includes(q) ||
-    (i.url   || '').toLowerCase().includes(q) ||
-    (i.catTitle || '').toLowerCase().includes(q)
-  );
-  renderCategories(filteredCats);
-  renderItems(filteredItems);
-};
-
-// ===== Filter items by category =====
-window.filterItemsByCategory = function (catId) {
-  renderItems(allItems, catId);
-};
-
-// ===== Category Modal =====
-window.openCategoryModal = async function (id = null) {
-  clearCatForm();
-  document.getElementById('catModalTitle').textContent = id ? 'تعديل التصنيف' : 'تصنيف جديد';
-  if (id) {
-    const cat = categories.find(c => c.id === id);
-    if (cat) {
-      document.getElementById('catId').value       = cat.id;
-      document.getElementById('catTitle').value    = cat.title || '';
-      document.getElementById('catIcon').value     = cat.icon  || '';
-      document.getElementById('catOrder').value    = cat.sortOrder ?? 0;
-      document.getElementById('catStatus').checked = cat.status !== false;
-    }
-  }
-  document.getElementById('categoryModal').classList.add('active');
-};
-
-window.closeCategoryModal = function () {
-  document.getElementById('categoryModal').classList.remove('active');
-};
-
-function clearCatForm() {
-  ['catId','catTitle','catIcon','catOrder','catPassword'].forEach(id => {
-    document.getElementById(id).value = '';
-  });
-  document.getElementById('catStatus').checked = true;
-}
-
-window.saveCategory = async function () {
-  const id       = document.getElementById('catId').value.trim();
-  const title    = document.getElementById('catTitle').value.trim();
-  const icon     = document.getElementById('catIcon').value.trim();
-  const password = document.getElementById('catPassword').value;
-  const order    = parseInt(document.getElementById('catOrder').value) || 0;
-  const status   = document.getElementById('catStatus').checked;
-
-  if (!title) return notify('العنوان مطلوب', 'error');
-
-  const data = { title, icon, sortOrder: order, status };
-  if (password) data.password = password;
-
-  try {
-    if (id) {
-      await updateDoc(doc(db, 'categories', id), data);
-      notify('تم تحديث التصنيف بنجاح');
-    } else {
-      await addDoc(collection(db, 'categories'), data);
-      notify('تم إنشاء التصنيف بنجاح');
-    }
-    closeCategoryModal();
-    await loadAll();
-  } catch (e) {
-    notify('خطأ: ' + e.message, 'error');
-  }
-};
-
-// ===== Toggle Category Status =====
-window.toggleCatStatus = async function (id, currentStatus) {
-  try {
-    await updateDoc(doc(db, 'categories', id), { status: !currentStatus });
-    notify(!currentStatus ? 'تم التفعيل' : 'تم التعطيل');
-    await loadAll();
-  } catch (e) {
-    notify('خطأ: ' + e.message, 'error');
-  }
-};
-
-// ===== Delete Category =====
-async function deleteCategoryById(id) {
-  try {
-    // Delete sub-items first
-    const itemsSnap = await getDocs(collection(db, 'categories', id, 'items'));
-    const batch = writeBatch(db);
-    itemsSnap.docs.forEach(d => batch.delete(d.ref));
-    batch.delete(doc(db, 'categories', id));
-    await batch.commit();
-    notify('تم الحذف بنجاح');
-    await loadAll();
-  } catch (e) {
-    notify('خطأ: ' + e.message, 'error');
-  }
-}
-
-// ===== Item Modal =====
-window.openItemModal = async function (itemId = null, catId = null) {
-  clearItemForm();
-  document.getElementById('itemModalTitle').textContent = itemId ? 'تعديل العنصر' : 'عنصر جديد';
-
-  if (catId) document.getElementById('itemCatSelect').value = catId;
-
-  if (itemId && catId) {
-    const item = allItems.find(i => i.id === itemId && i.catId === catId);
-    if (item) {
-      document.getElementById('itemId').value        = item.id;
-      document.getElementById('itemCatId').value     = item.catId;
-      document.getElementById('itemCatSelect').value = item.catId;
-      document.getElementById('itemTitle').value     = item.title    || '';
-      document.getElementById('itemIcon').value      = item.icon     || '';
-      document.getElementById('itemUrl').value       = item.url      || '';
-      document.getElementById('itemAction').value    = item.action   || '';
-      document.getElementById('itemOrder').value     = item.sortOrder ?? 0;
-      document.getElementById('itemStatus').checked  = item.status !== false;
-    }
-  }
-  document.getElementById('itemModal').classList.add('active');
-};
-
-window.closeItemModal = function () {
-  document.getElementById('itemModal').classList.remove('active');
-};
-
-function clearItemForm() {
-  ['itemId','itemCatId','itemTitle','itemIcon','itemUrl','itemAction','itemPassword','itemOrder'].forEach(id => {
-    document.getElementById(id).value = '';
-  });
-  document.getElementById('itemStatus').checked  = true;
-  document.getElementById('itemCatSelect').value = '';
-}
-
-window.saveItem = async function () {
-  const id       = document.getElementById('itemId').value.trim();
-  const catId    = document.getElementById('itemCatSelect').value;
-  const title    = document.getElementById('itemTitle').value.trim();
-  const icon     = document.getElementById('itemIcon').value.trim();
-  const url      = document.getElementById('itemUrl').value.trim();
-  const action   = document.getElementById('itemAction').value.trim();
-  const password = document.getElementById('itemPassword').value;
-  const order    = parseInt(document.getElementById('itemOrder').value) || 0;
-  const status   = document.getElementById('itemStatus').checked;
-
-  if (!catId)  return notify('اختر تصنيفاً', 'error');
-  if (!title)  return notify('العنوان مطلوب', 'error');
-
-  const data = { title, icon, url, action, sortOrder: order, status };
-  if (password) data.password = password;
-
-  try {
-    if (id) {
-      const oldCatId = document.getElementById('itemCatId').value;
-      if (oldCatId && oldCatId !== catId) {
-        // moved to different category
-        const oldRef = doc(db, 'categories', oldCatId, 'items', id);
-        const newRef = doc(db, 'categories', catId, 'items', id);
-        const snap = await getDoc(oldRef);
-        if (snap.exists()) {
-          await setDoc(newRef, { ...snap.data(), ...data });
-          await deleteDoc(oldRef);
-        }
-      } else {
-        await updateDoc(doc(db, 'categories', catId, 'items', id), data);
-      }
-      notify('تم تحديث العنصر بنجاح');
-    } else {
-      await addDoc(collection(db, 'categories', catId, 'items'), data);
-      notify('تم إنشاء العنصر بنجاح');
-    }
-    closeItemModal();
-    await loadAll();
-  } catch (e) {
-    notify('خطأ: ' + e.message, 'error');
-  }
-};
-
-// ===== Toggle Item Status =====
-window.toggleItemStatus = async function (itemId, catId, currentStatus) {
-  try {
-    await updateDoc(doc(db, 'categories', catId, 'items', itemId), { status: !currentStatus });
-    notify(!currentStatus ? 'تم التفعيل' : 'تم التعطيل');
-    await loadAll();
-  } catch (e) {
-    notify('خطأ: ' + e.message, 'error');
-  }
-};
-
-async function deleteItemById(itemId, catId) {
-  try {
-    await deleteDoc(doc(db, 'categories', catId, 'items', itemId));
-    notify('تم الحذف بنجاح');
-    await loadAll();
-  } catch (e) {
-    notify('خطأ: ' + e.message, 'error');
-  }
-}
-
-// ===== Password Modal =====
-window.openPasswordModal = function (type, docId, catId) {
-  document.getElementById('pwType').value  = type;
-  document.getElementById('pwDocId').value = docId;
-  document.getElementById('pwCatId').value = catId;
-  document.getElementById('pwNew').value   = '';
-  document.getElementById('passwordModal').classList.add('active');
-};
-window.closePasswordModal = function () {
-  document.getElementById('passwordModal').classList.remove('active');
-};
-window.savePassword = async function () {
-  const type  = document.getElementById('pwType').value;
-  const docId = document.getElementById('pwDocId').value;
-  const catId = document.getElementById('pwCatId').value;
-  const pw    = document.getElementById('pwNew').value;
-
-  try {
-    if (type === 'cat') {
-      await updateDoc(doc(db, 'categories', docId), { password: pw });
-    } else {
-      await updateDoc(doc(db, 'categories', catId, 'items', docId), { password: pw });
-    }
-    notify('تم تحديث كلمة المرور');
-    closePasswordModal();
-    await loadAll();
-  } catch (e) {
-    notify('خطأ: ' + e.message, 'error');
-  }
-};
-
-// ===== URL Modal =====
-window.openUrlModal = function (itemId, catId, currentUrl) {
-  document.getElementById('urlDocId').value = itemId;
-  document.getElementById('urlCatId').value = catId;
-  document.getElementById('urlNew').value   = currentUrl || '';
-  document.getElementById('urlModal').classList.add('active');
-};
-window.closeUrlModal = function () {
-  document.getElementById('urlModal').classList.remove('active');
-};
-window.saveUrl = async function () {
-  const itemId = document.getElementById('urlDocId').value;
-  const catId  = document.getElementById('urlCatId').value;
-  const url    = document.getElementById('urlNew').value.trim();
-  try {
-    await updateDoc(doc(db, 'categories', catId, 'items', itemId), { url });
-    notify('تم تحديث الرابط');
-    closeUrlModal();
-    await loadAll();
-  } catch (e) {
-    notify('خطأ: ' + e.message, 'error');
-  }
-};
-
-// ===== Confirm Delete Modal =====
-let confirmCallback = null;
-window.confirmDelete = function (type, id, catId) {
-  const label = type === 'cat' ? 'التصنيف' : 'العنصر';
-  document.getElementById('confirmMsg').textContent = `هل أنت متأكد من حذف ${label}؟ لا يمكن التراجع عن هذا الإجراء.`;
-  confirmCallback = async () => {
-    closeConfirm();
-    if (type === 'cat')  await deleteCategoryById(id);
-    else                  await deleteItemById(id, catId);
-  };
-  document.getElementById('confirmOk').onclick = confirmCallback;
-  document.getElementById('confirmModal').classList.add('active');
-};
-window.closeConfirm = function () {
-  document.getElementById('confirmModal').classList.remove('active');
-};
-
-// Close modals on backdrop click
-document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
-  backdrop.addEventListener('click', e => {
-    if (e.target === backdrop) backdrop.classList.remove('active');
-  });
-});
-
-// ===== Notifications =====
-window.notify = function (msg, type = 'success') {
-  const container = document.getElementById('notifContainer');
-  const el = document.createElement('div');
-  el.className = `notif ${type}`;
-  el.innerHTML = `<span class="notif-dot"></span>${msg}`;
-  container.appendChild(el);
-  setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateY(10px)'; el.style.transition = '.3s'; setTimeout(() => el.remove(), 300); }, 3500);
-};
-
-// ===== Drag & Drop — Categories =====
-function attachCatDrag() {
-  const cards = document.querySelectorAll('.cat-card[draggable="true"]');
-  cards.forEach(card => {
-    card.addEventListener('dragstart', onCatDragStart);
-    card.addEventListener('dragover',  onCatDragOver);
-    card.addEventListener('dragleave', onCatDragLeave);
-    card.addEventListener('drop',      onCatDrop);
-    card.addEventListener('dragend',   onCatDragEnd);
-  });
-}
-
-function onCatDragStart(e) {
-  dragSrc = this;
-  this.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', this.dataset.id);
-}
-function onCatDragOver(e) {
-  e.preventDefault();
-  if (this !== dragSrc) this.classList.add('drag-over');
-}
-function onCatDragLeave() { this.classList.remove('drag-over'); }
-function onCatDrop(e) {
-  e.stopPropagation();
-  if (this === dragSrc) return;
-  const srcId  = dragSrc.dataset.id;
-  const tgtId  = this.dataset.id;
-  const srcIdx = categories.findIndex(c => c.id === srcId);
-  const tgtIdx = categories.findIndex(c => c.id === tgtId);
-  if (srcIdx < 0 || tgtIdx < 0) return;
-  const [moved] = categories.splice(srcIdx, 1);
-  categories.splice(tgtIdx, 0, moved);
-  saveCatOrder();
   renderCategories();
 }
-function onCatDragEnd() {
-  document.querySelectorAll('.cat-card').forEach(c => { c.classList.remove('dragging','drag-over'); });
-  dragSrc = null;
-}
 
-async function saveCatOrder() {
-  const batch = writeBatch(db);
-  categories.forEach((c, i) => {
-    c.sortOrder = i;
-    batch.update(doc(db, 'categories', c.id), { sortOrder: i });
-  });
-  await batch.commit();
-}
-
-// ===== Drag & Drop — Items =====
-function attachItemDrag() {
-  const cards = document.querySelectorAll('.item-card[draggable="true"]');
-  cards.forEach(card => {
-    card.addEventListener('dragstart', onItemDragStart);
-    card.addEventListener('dragover',  onItemDragOver);
-    card.addEventListener('dragleave', onItemDragLeave);
-    card.addEventListener('drop',      onItemDrop);
-    card.addEventListener('dragend',   onItemDragEnd);
-  });
-}
-
-function onItemDragStart(e) {
-  dragSrc = this;
-  this.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', this.dataset.id);
-}
-function onItemDragOver(e) {
-  e.preventDefault();
-  if (this !== dragSrc) this.classList.add('drag-over');
-}
-function onItemDragLeave() { this.classList.remove('drag-over'); }
-function onItemDrop(e) {
-  e.stopPropagation();
-  if (this === dragSrc) return;
-  const srcId    = dragSrc.dataset.id;
-  const srcCat   = dragSrc.dataset.cat;
-  const tgtId    = this.dataset.id;
-  const tgtCat   = this.dataset.cat;
-  if (srcCat !== tgtCat) return; // cross-category drag not supported
-
-  const catItems = allItems.filter(i => i.catId === srcCat);
-  const srcIdx   = catItems.findIndex(i => i.id === srcId);
-  const tgtIdx   = catItems.findIndex(i => i.id === tgtId);
-  if (srcIdx < 0 || tgtIdx < 0) return;
-
-  const [moved] = catItems.splice(srcIdx, 1);
-  catItems.splice(tgtIdx, 0, moved);
-
-  // Rebuild allItems order
-  const otherItems = allItems.filter(i => i.catId !== srcCat);
-  allItems.length = 0;
-  allItems.push(...otherItems, ...catItems);
-
-  saveItemOrder(srcCat, catItems);
-  renderItems(allItems, document.getElementById('filterCat').value);
-}
-function onItemDragEnd() {
-  document.querySelectorAll('.item-card').forEach(c => { c.classList.remove('dragging','drag-over'); });
-  dragSrc = null;
-}
-
-async function saveItemOrder(catId, catItems) {
-  const batch = writeBatch(db);
-  catItems.forEach((item, i) => {
-    item.sortOrder = i;
-    batch.update(doc(db, 'categories', catId, 'items', item.id), { sortOrder: i });
-  });
-  await batch.commit();
-}
-
-// ===== ANNOUNCEMENTS =====
-let announcements = [];
-
-const ANN_TYPE_LABELS = {
-  info: 'معلومات', warning: 'تحذير',
-  success: 'نجاح', danger: 'خطر', promo: 'ترويجي'
-};
-
-// Load announcements alongside loadAll
-const _origLoadAll = window.loadAll;
-window.loadAll = async function () {
-  showLoading();
-  categories = []; allItems = [];
-  try {
-    const catsSnap = await getDocs(query(collection(db, 'categories'), orderBy('sortOrder','asc')));
-    for (const catDoc of catsSnap.docs) {
-      const catData = { id: catDoc.id, ...catDoc.data(), items: [] };
-      const itemsSnap = await getDocs(query(collection(db,'categories',catDoc.id,'items'), orderBy('sortOrder','asc')));
-      itemsSnap.forEach(itemDoc => {
-        const item = { id: itemDoc.id, catId: catDoc.id, catTitle: catData.title, ...itemDoc.data() };
-        catData.items.push(item); allItems.push(item);
-      });
-      categories.push(catData);
-    }
-    // Load announcements
-    const annSnap = await getDocs(query(collection(db,'announcements'), orderBy('priority','desc')));
-    announcements = annSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    renderCategories(); renderItems(); renderAnnouncements();
-    updateStats(); populateCatSelects();
-  } catch(e) {
-    notify('خطأ في التحميل: ' + e.message, 'error');
-    console.error(e);
-  }
-};
-
-// Override updateStats
-const _origUpdateStats = updateStats;
-function updateStats() {
-  document.getElementById('totalCats').textContent  = categories.length;
-  document.getElementById('totalItems').textContent = allItems.length;
-  const el = document.getElementById('totalAnnouncements');
-  if (el) el.textContent = announcements.length;
-}
-
-function renderAnnouncements(list = announcements) {
-  const container = document.getElementById('announcementsList');
-  if (!list.length) {
-    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📢</div><span>لا توجد إعلانات بعد — أضف إعلانك الأول</span></div>`;
+function renderCategories() {
+  const sorted = sortByOrder(categoriesCache);
+  if (!sorted.length) {
+    categoriesBody.innerHTML =
+      '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">لا توجد فئات بعد</td></tr>';
     return;
   }
-  container.innerHTML = list.map(ann => buildAnnCard(ann)).join('');
+  categoriesBody.innerHTML = sorted
+    .map(
+      (cat) => `
+    <tr>
+      <td>${cat.sortOrder ?? "-"}</td>
+      <td><code>${cat.id}</code></td>
+      <td>${cat.title}</td>
+      <td>${cat.icon || "-"}</td>
+      <td>${statusBadge(cat.status)}</td>
+      <td>
+        <button class="btn btn-sm btn-outline" onclick="openItemsModal('${cat.id}','${cat.title}')">
+          ${cat.items.length} عناصر
+        </button>
+      </td>
+      <td>
+        <div class="action-btns">
+          <button class="btn btn-sm btn-primary" onclick="editCategory('${cat.id}')">تعديل</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteCategory('${cat.id}')">حذف</button>
+        </div>
+      </td>
+    </tr>`
+    )
+    .join("");
 }
 
-function buildAnnCard(ann) {
-  const typeClass = `ann-type-${ann.type || 'info'}`;
-  const typeLabel = ANN_TYPE_LABELS[ann.type] || ann.type || 'معلومات';
-  const statusClass = ann.status !== false ? 'on' : 'off';
-  const statusLabel = ann.status !== false ? 'نشط' : 'مخفي';
-  const expiry = ann.expiryDate ? new Date(ann.expiryDate).toLocaleString('ar-EG') : null;
-
-  return `
-  <div class="ann-card">
-    <div class="ann-type-badge ${typeClass}"></div>
-    <div class="ann-body">
-      <div class="ann-header-row">
-        <span class="ann-title">${ann.title || '—'}</span>
-        <span class="ann-status-badge ${statusClass}">${statusLabel}</span>
-        <span class="ann-type-label">${typeLabel}</span>
-      </div>
-      <div class="ann-message">${ann.message || ''}</div>
-      <div class="ann-meta">
-        ${ann.actionUrl ? `<span class="ann-meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>${ann.actionUrl}</span>` : ''}
-        ${expiry ? `<span class="ann-meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>ينتهي: ${expiry}</span>` : ''}
-        <span class="ann-meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>أولوية: ${ann.priority ?? 0}</span>
-      </div>
-    </div>
-    <div class="ann-actions">
-      <button class="btn-icon accent" title="تعديل" onclick="openAnnouncementModal('${ann.id}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-      </button>
-      <button class="btn-icon ${ann.status !== false ? 'danger' : 'success'}" title="${ann.status !== false ? 'إخفاء' : 'إظهار'}" onclick="toggleAnnStatus('${ann.id}', ${ann.status !== false})">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ann.status !== false ? '<path d="M18.36 6.64A9 9 0 0 1 20.77 15"/><path d="M6.16 6.16a9 9 0 1 0 12.68 12.68"/><line x1="2" y1="2" x2="22" y2="22"/>' : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'}</svg>
-      </button>
-      <button class="btn-icon danger" title="حذف" onclick="confirmDeleteAnn('${ann.id}')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-      </button>
-    </div>
-  </div>`;
+function openCategoryModal(cat) {
+  $("catModalTitle").textContent = cat ? "تعديل فئة" : "إضافة فئة";
+  $("catId").value = cat ? cat.id : "";
+  $("catTitle").value = cat ? cat.title : "";
+  $("catIcon").value = cat ? cat.icon || "" : "";
+  $("catPassword").value = cat ? cat.password || "" : "";
+  $("catSortOrder").value = cat ? cat.sortOrder ?? 0 : 0;
+  $("catStatus").value = cat ? cat.status || "active" : "active";
+  $("catModal").classList.add("open");
 }
 
-window.openAnnouncementModal = function (id = null) {
-  clearAnnForm();
-  document.getElementById('annModalTitle').textContent = id ? 'تعديل الإعلان' : 'إعلان جديد';
-  if (id) {
-    const ann = announcements.find(a => a.id === id);
-    if (ann) {
-      document.getElementById('annId').value       = ann.id;
-      document.getElementById('annTitle').value    = ann.title    || '';
-      document.getElementById('annMessage').value  = ann.message  || '';
-      document.getElementById('annType').value     = ann.type     || 'info';
-      document.getElementById('annUrl').value      = ann.actionUrl || '';
-      document.getElementById('annBtnText').value  = ann.actionBtnText || '';
-      document.getElementById('annPriority').value = ann.priority ?? 0;
-      document.getElementById('annStatus').checked = ann.status !== false;
-      if (ann.expiryDate) {
-        const d = new Date(ann.expiryDate);
-        document.getElementById('annExpiry').value = d.toISOString().slice(0,16);
-      }
-    }
-  }
-  document.getElementById('announcementModal').classList.add('active');
-};
+$("addCategoryBtn").addEventListener("click", () => openCategoryModal(null));
+$("catModalClose").addEventListener("click", () => $("catModal").classList.remove("open"));
 
-window.closeAnnouncementModal = function () {
-  document.getElementById('announcementModal').classList.remove('active');
-};
-
-function clearAnnForm() {
-  ['annId','annTitle','annMessage','annUrl','annBtnText','annPriority','annExpiry'].forEach(id => {
-    document.getElementById(id).value = '';
-  });
-  document.getElementById('annType').value    = 'info';
-  document.getElementById('annStatus').checked = true;
-}
-
-window.saveAnnouncement = async function () {
-  const id      = document.getElementById('annId').value.trim();
-  const title   = document.getElementById('annTitle').value.trim();
-  const message = document.getElementById('annMessage').value.trim();
-  const type    = document.getElementById('annType').value;
-  const url     = document.getElementById('annUrl').value.trim();
-  const btnText = document.getElementById('annBtnText').value.trim();
-  const priority = parseInt(document.getElementById('annPriority').value) || 0;
-  const status  = document.getElementById('annStatus').checked;
-  const expiry  = document.getElementById('annExpiry').value;
-
-  if (!title)   return notify('العنوان مطلوب', 'error');
-  if (!message) return notify('نص الإعلان مطلوب', 'error');
-
+$("catForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = $("catId").value.trim();
   const data = {
-    title, message, type, priority, status,
-    actionUrl: url || '',
-    actionBtnText: btnText || '',
-    expiryDate: expiry ? new Date(expiry).toISOString() : '',
-    updatedAt: new Date().toISOString(),
+    title: $("catTitle").value.trim(),
+    icon: $("catIcon").value.trim(),
+    password: $("catPassword").value.trim() || null,
+    sortOrder: parseInt($("catSortOrder").value) || 0,
+    status: $("catStatus").value,
   };
-
   try {
     if (id) {
-      await updateDoc(doc(db, 'announcements', id), data);
-      notify('تم تحديث الإعلان بنجاح ✓');
+      await db.collection("categories").doc(id).update(data);
     } else {
-      data.createdAt = new Date().toISOString();
-      await addDoc(collection(db, 'announcements'), data);
-      notify('تم نشر الإعلان بنجاح ✓');
+      const newId = data.title
+        .replace(/[^a-z0-9_\u0621-\u064a]/gi, "_")
+        .toLowerCase()
+        .slice(0, 30) || "category_" + Date.now();
+      await db.collection("categories").doc(newId).set(data);
     }
-    closeAnnouncementModal();
-    await loadAll();
-  } catch(e) {
-    notify('خطأ: ' + e.message, 'error');
+    $("catModal").classList.remove("open");
+    await loadCategories();
+  } catch (err) {
+    alert("خطأ: " + err.message);
   }
+});
+
+window.editCategory = (id) => {
+  const cat = categoriesCache.find((c) => c.id === id);
+  if (cat) openCategoryModal(cat);
 };
 
-window.toggleAnnStatus = async function (id, currentStatus) {
+window.deleteCategory = async (id) => {
+  if (!confirm("هل تريد حذف هذه الفئة وجميع عناصرها؟")) return;
   try {
-    await updateDoc(doc(db,'announcements',id), { status: !currentStatus });
-    notify(!currentStatus ? 'تم إظهار الإعلان' : 'تم إخفاء الإعلان');
-    await loadAll();
-  } catch(e) {
-    notify('خطأ: ' + e.message, 'error');
+    const itemsSnap = await db.collection("categories").doc(id).collection("items").get();
+    const batch = db.batch();
+    itemsSnap.forEach((d) => batch.delete(d.ref));
+    batch.delete(db.collection("categories").doc(id));
+    await batch.commit();
+    await loadCategories();
+  } catch (err) {
+    alert("خطأ: " + err.message);
   }
 };
 
-window.confirmDeleteAnn = function (id) {
-  document.getElementById('confirmMsg').textContent = 'هل أنت متأكد من حذف هذا الإعلان؟';
-  document.getElementById('confirmOk').onclick = async () => {
-    closeConfirm();
-    try {
-      await deleteDoc(doc(db,'announcements',id));
-      notify('تم حذف الإعلان');
-      await loadAll();
-    } catch(e) {
-      notify('خطأ: ' + e.message, 'error');
-    }
-  };
-  document.getElementById('confirmModal').classList.add('active');
+// ===== Items (nested in Modal) =====
+let currentItemCategory = null;
+
+function openItemsModal(catId, catTitle) {
+  currentItemCategory = catId;
+  $("itemsModalTitle").textContent = `عناصر: ${catTitle}`;
+  renderItems();
+  $("itemsModal").classList.add("open");
+}
+
+$("itemsModalClose").addEventListener("click", () => {
+  $("itemsModal").classList.remove("open");
+  currentItemCategory = null;
+});
+
+function renderItems() {
+  const cat = categoriesCache.find((c) => c.id === currentItemCategory);
+  const items = cat ? sortByOrder(cat.items) : [];
+  const body = $("itemsModalBody");
+  if (!items.length) {
+    body.innerHTML =
+      '<p style="color:var(--text-muted);text-align:center;padding:16px;">لا توجد عناصر</p>';
+  } else {
+    body.innerHTML = items
+      .map(
+        (item, i) => `
+      <div class="item-entry">
+        <div class="item-info">
+          <span class="item-icon">${getIconSvg(item.icon)}</span>
+          <span class="item-title">${item.title}</span>
+          <span class="item-status">${statusBadge(item.status)}</span>
+        </div>
+        <div class="action-btns">
+          <button class="btn btn-sm btn-primary" onclick="openItemModal('${item.id || i}')">تعديل</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteItem('${item.id || i}')">حذف</button>
+        </div>
+      </div>`
+      )
+      .join("");
+  }
+  body.innerHTML += `
+    <div class="add-item-bar">
+      <input type="text" id="quickItemTitle" placeholder="عنوان العنصر الجديد" />
+      <button class="btn btn-primary" onclick="quickAddItem()">إضافة</button>
+    </div>
+  `;
+}
+
+window.quickAddItem = async () => {
+  const title = $("quickItemTitle").value.trim();
+  if (!title) return;
+  try {
+    await db.collection("categories").doc(currentItemCategory).collection("items").add({
+      title,
+      icon: "",
+      url: "",
+      action: "webview",
+      status: "active",
+      sortOrder: Date.now(),
+    });
+    $("quickItemTitle").value = "";
+    await loadCategories();
+    renderItems();
+  } catch (err) {
+    alert("خطأ: " + err.message);
+  }
 };
 
-// Patch showSection to handle announcements
-const _origShowSection = window.showSection;
-window.showSection = function (name) {
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('section-' + name).classList.add('active');
-  const navBtns = document.querySelectorAll('.nav-item');
-  const idx = { categories:0, items:1, announcements:2 }[name] ?? 0;
-  if (navBtns[idx]) navBtns[idx].classList.add('active');
+window.deleteItem = async (itemId) => {
+  if (!confirm("حذف هذا العنصر؟")) return;
+  try {
+    await db
+      .collection("categories")
+      .doc(currentItemCategory)
+      .collection("items")
+      .doc(itemId)
+      .delete();
+    await loadCategories();
+    renderItems();
+  } catch (err) {
+    alert("خطأ: " + err.message);
+  }
 };
+
+function openItemModal(itemId) {
+  const cat = categoriesCache.find((c) => c.id === currentItemCategory);
+  const item = cat ? cat.items.find((i) => i.id === itemId) : null;
+  $("itemModalTitle").textContent = item ? "تعديل عنصر" : "إضافة عنصر";
+  $("itemParentCategory").value = currentItemCategory;
+  $("itemId").value = item ? itemId : "";
+  $("itemTitle").value = item ? item.title : "";
+  $("itemIcon").value = item ? item.icon || "" : "";
+  $("itemUrl").value = item ? item.url || "" : "";
+  $("itemAction").value = item ? item.action || "webview" : "webview";
+  $("itemPassword").value = item ? item.password || "" : "";
+  $("itemSortOrder").value = item ? item.sortOrder ?? 0 : 0;
+  $("itemStatus").value = item ? item.status || "active" : "active";
+  $("itemModal").classList.add("open");
+}
+
+$("itemModalClose").addEventListener("click", () => $("itemModal").classList.remove("open"));
+
+$("itemForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const catId = $("itemParentCategory").value;
+  const itemId = $("itemId").value;
+  const data = {
+    title: $("itemTitle").value.trim(),
+    icon: $("itemIcon").value.trim(),
+    url: $("itemUrl").value.trim(),
+    action: $("itemAction").value,
+    password: $("itemPassword").value.trim() || null,
+    sortOrder: parseInt($("itemSortOrder").value) || 0,
+    status: $("itemStatus").value,
+  };
+  try {
+    const ref = db.collection("categories").doc(catId).collection("items");
+    if (itemId) {
+      await ref.doc(itemId).update(data);
+    } else {
+      await ref.add(data);
+    }
+    $("itemModal").classList.remove("open");
+    await loadCategories();
+    renderItems();
+  } catch (err) {
+    alert("خطأ: " + err.message);
+  }
+});
+
+// ===== Global Buttons =====
+async function loadGlobalButtons() {
+  const snap = await db.collection("global_buttons").get();
+  globalButtonsCache = [];
+  snap.forEach((d) => globalButtonsCache.push({ id: d.id, ...d.data() }));
+  renderGlobalButtons();
+}
+
+function renderGlobalButtons() {
+  const sorted = sortByOrder(globalButtonsCache);
+  if (!sorted.length) {
+    globalButtonsBody.innerHTML =
+      '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">لا توجد أزرار سريعة</td></tr>';
+    return;
+  }
+  globalButtonsBody.innerHTML = sorted
+    .map(
+      (btn) => `
+    <tr>
+      <td>${btn.sortOrder ?? "-"}</td>
+      <td><code>${btn.id}</code></td>
+      <td>${btn.title}</td>
+      <td>${btn.icon || "-"}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;direction:ltr;">${btn.url || "-"}</td>
+      <td>${statusBadge(btn.status)}</td>
+      <td>
+        <div class="action-btns">
+          <button class="btn btn-sm btn-primary" onclick="editGlobalBtn('${btn.id}')">تعديل</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteGlobalBtn('${btn.id}')">حذف</button>
+        </div>
+      </td>
+    </tr>`
+    )
+    .join("");
+}
+
+function openGlobalModal(btn) {
+  $("globalModalTitle").textContent = btn ? "تعديل زر سريع" : "إضافة زر سريع";
+  $("globalId").value = btn ? btn.id : "";
+  $("globalTitle").value = btn ? btn.title : "";
+  $("globalIcon").value = btn ? btn.icon || "" : "";
+  $("globalUrl").value = btn ? btn.url || "" : "";
+  $("globalAction").value = btn ? btn.action || "webview" : "webview";
+  $("globalPassword").value = btn ? btn.password || "" : "";
+  $("globalSortOrder").value = btn ? btn.sortOrder ?? 0 : 0;
+  $("globalStatus").value = btn ? btn.status || "active" : "active";
+  $("globalModal").classList.add("open");
+}
+
+$("addGlobalBtn").addEventListener("click", () => openGlobalModal(null));
+$("globalModalClose").addEventListener("click", () => $("globalModal").classList.remove("open"));
+
+$("globalForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = $("globalId").value.trim();
+  const data = {
+    title: $("globalTitle").value.trim(),
+    icon: $("globalIcon").value.trim(),
+    url: $("globalUrl").value.trim(),
+    action: $("globalAction").value,
+    password: $("globalPassword").value.trim() || null,
+    sortOrder: parseInt($("globalSortOrder").value) || 0,
+    status: $("globalStatus").value,
+  };
+  try {
+    if (id) {
+      await db.collection("global_buttons").doc(id).update(data);
+    } else {
+      const newId =
+        data.title.replace(/[^a-z0-9_\u0621-\u064a]/gi, "_").toLowerCase().slice(0, 30) ||
+        "btn_" + Date.now();
+      await db.collection("global_buttons").doc(newId).set(data);
+    }
+    $("globalModal").classList.remove("open");
+    await loadGlobalButtons();
+  } catch (err) {
+    alert("خطأ: " + err.message);
+  }
+});
+
+window.editGlobalBtn = (id) => {
+  const btn = globalButtonsCache.find((b) => b.id === id);
+  if (btn) openGlobalModal(btn);
+};
+
+window.deleteGlobalBtn = async (id) => {
+  if (!confirm("هل تريد حذف هذا الزر؟")) return;
+  try {
+    await db.collection("global_buttons").doc(id).delete();
+    await loadGlobalButtons();
+  } catch (err) {
+    alert("خطأ: " + err.message);
+  }
+};
+
+// ===== Settings =====
+async function loadSettings() {
+  try {
+    const doc = await db.collection("settings").doc("app").get();
+    if (doc.exists) {
+      const data = doc.data();
+      $("settingsVersion").value = data.version ?? 1;
+      $("settingsTheme").value = data.themeDefault || "system";
+      $("settingsMaintenance").value = data.maintenanceMode ? "true" : "false";
+    } else {
+      $("settingsVersion").value = 1;
+      $("settingsTheme").value = "system";
+      $("settingsMaintenance").value = "false";
+    }
+  } catch {}
+}
+
+$("settingsForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await db.collection("settings").doc("app").set({
+      version: parseInt($("settingsVersion").value) || 1,
+      themeDefault: $("settingsTheme").value,
+      maintenanceMode: $("settingsMaintenance").value === "true",
+    });
+    alert("تم حفظ الإعدادات");
+  } catch (err) {
+    alert("خطأ: " + err.message);
+  }
+});
+
+// ===== Init =====
+async function init() {
+  await Promise.all([loadCategories(), loadGlobalButtons(), loadSettings()]);
+}
+
+init();
