@@ -30,6 +30,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
         العناصر
       </button>
+      <button class="nav-item" onclick="showSection('announcements')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        الإعلانات
+      </button>
     </nav>
 
     <div class="sidebar-stats">
@@ -40,6 +44,10 @@
       <div class="stat-card">
         <span class="stat-value" id="totalItems">0</span>
         <span class="stat-label">عنصر</span>
+      </div>
+      <div class="stat-card" style="grid-column:1/-1">
+        <span class="stat-value" id="totalAnnouncements">0</span>
+        <span class="stat-label">إعلان</span>
       </div>
     </div>
   </aside>
@@ -107,7 +115,93 @@
         </div>
       </div>
     </section>
+
+    <!-- Announcements Section -->
+    <section class="section" id="section-announcements">
+      <div class="section-header">
+        <div>
+          <h1 class="section-title">الإعلانات</h1>
+          <p class="section-sub">إدارة الإعلانات التي تظهر للمستخدمين في التطبيق</p>
+        </div>
+        <button class="btn-primary" onclick="openAnnouncementModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          إعلان جديد
+        </button>
+      </div>
+      <div class="ann-list" id="announcementsList">
+        <div class="loading-state"><div class="spinner"></div><span>جارٍ التحميل…</span></div>
+      </div>
+    </section>
   </main>
+
+  <!-- ===== ANNOUNCEMENT MODAL ===== -->
+  <div class="modal-backdrop" id="announcementModal">
+    <div class="modal modal-wide">
+      <div class="modal-header">
+        <h2 id="annModalTitle">إعلان جديد</h2>
+        <button class="modal-close" onclick="closeAnnouncementModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="annId" />
+        <div class="form-row">
+          <div class="form-group">
+            <label>العنوان <span class="req">*</span></label>
+            <input type="text" id="annTitle" placeholder="عنوان الإعلان" />
+          </div>
+          <div class="form-group">
+            <label>النوع</label>
+            <select id="annType">
+              <option value="info">معلومات</option>
+              <option value="warning">تحذير</option>
+              <option value="success">نجاح</option>
+              <option value="danger">خطر</option>
+              <option value="promo">ترويجي</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>الرسالة <span class="req">*</span></label>
+          <textarea id="annMessage" placeholder="نص الإعلان الذي سيظهر للمستخدم…" rows="3"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>رابط الإجراء (اختياري)</label>
+            <input type="url" id="annUrl" placeholder="https://…" />
+          </div>
+          <div class="form-group">
+            <label>نص زر الإجراء</label>
+            <input type="text" id="annBtnText" placeholder="مثال: اعرف أكثر" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>تاريخ الانتهاء (اختياري)</label>
+            <input type="datetime-local" id="annExpiry" />
+          </div>
+          <div class="form-group">
+            <label>الأولوية</label>
+            <input type="number" id="annPriority" placeholder="0" min="0" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>الحالة</label>
+          <div class="toggle-row">
+            <span>مفعّل (يظهر للمستخدمين)</span>
+            <label class="toggle">
+              <input type="checkbox" id="annStatus" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeAnnouncementModal()">إلغاء</button>
+        <button class="btn-primary" onclick="saveAnnouncement()">نشر الإعلان</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ===== CATEGORY MODAL ===== -->
   <div class="modal-backdrop" id="categoryModal">

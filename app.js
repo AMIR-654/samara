@@ -632,3 +632,203 @@ async function saveItemOrder(catId, catItems) {
   });
   await batch.commit();
 }
+
+// ===== ANNOUNCEMENTS =====
+let announcements = [];
+
+const ANN_TYPE_LABELS = {
+  info: 'معلومات', warning: 'تحذير',
+  success: 'نجاح', danger: 'خطر', promo: 'ترويجي'
+};
+
+// Load announcements alongside loadAll
+const _origLoadAll = window.loadAll;
+window.loadAll = async function () {
+  showLoading();
+  categories = []; allItems = [];
+  try {
+    const catsSnap = await getDocs(query(collection(db, 'categories'), orderBy('sortOrder','asc')));
+    for (const catDoc of catsSnap.docs) {
+      const catData = { id: catDoc.id, ...catDoc.data(), items: [] };
+      const itemsSnap = await getDocs(query(collection(db,'categories',catDoc.id,'items'), orderBy('sortOrder','asc')));
+      itemsSnap.forEach(itemDoc => {
+        const item = { id: itemDoc.id, catId: catDoc.id, catTitle: catData.title, ...itemDoc.data() };
+        catData.items.push(item); allItems.push(item);
+      });
+      categories.push(catData);
+    }
+    // Load announcements
+    const annSnap = await getDocs(query(collection(db,'announcements'), orderBy('priority','desc')));
+    announcements = annSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    renderCategories(); renderItems(); renderAnnouncements();
+    updateStats(); populateCatSelects();
+  } catch(e) {
+    notify('خطأ في التحميل: ' + e.message, 'error');
+    console.error(e);
+  }
+};
+
+// Override updateStats
+const _origUpdateStats = updateStats;
+function updateStats() {
+  document.getElementById('totalCats').textContent  = categories.length;
+  document.getElementById('totalItems').textContent = allItems.length;
+  const el = document.getElementById('totalAnnouncements');
+  if (el) el.textContent = announcements.length;
+}
+
+function renderAnnouncements(list = announcements) {
+  const container = document.getElementById('announcementsList');
+  if (!list.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">📢</div><span>لا توجد إعلانات بعد — أضف إعلانك الأول</span></div>`;
+    return;
+  }
+  container.innerHTML = list.map(ann => buildAnnCard(ann)).join('');
+}
+
+function buildAnnCard(ann) {
+  const typeClass = `ann-type-${ann.type || 'info'}`;
+  const typeLabel = ANN_TYPE_LABELS[ann.type] || ann.type || 'معلومات';
+  const statusClass = ann.status !== false ? 'on' : 'off';
+  const statusLabel = ann.status !== false ? 'نشط' : 'مخفي';
+  const expiry = ann.expiryDate ? new Date(ann.expiryDate).toLocaleString('ar-EG') : null;
+
+  return `
+  <div class="ann-card">
+    <div class="ann-type-badge ${typeClass}"></div>
+    <div class="ann-body">
+      <div class="ann-header-row">
+        <span class="ann-title">${ann.title || '—'}</span>
+        <span class="ann-status-badge ${statusClass}">${statusLabel}</span>
+        <span class="ann-type-label">${typeLabel}</span>
+      </div>
+      <div class="ann-message">${ann.message || ''}</div>
+      <div class="ann-meta">
+        ${ann.actionUrl ? `<span class="ann-meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>${ann.actionUrl}</span>` : ''}
+        ${expiry ? `<span class="ann-meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>ينتهي: ${expiry}</span>` : ''}
+        <span class="ann-meta-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>أولوية: ${ann.priority ?? 0}</span>
+      </div>
+    </div>
+    <div class="ann-actions">
+      <button class="btn-icon accent" title="تعديل" onclick="openAnnouncementModal('${ann.id}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+      <button class="btn-icon ${ann.status !== false ? 'danger' : 'success'}" title="${ann.status !== false ? 'إخفاء' : 'إظهار'}" onclick="toggleAnnStatus('${ann.id}', ${ann.status !== false})">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${ann.status !== false ? '<path d="M18.36 6.64A9 9 0 0 1 20.77 15"/><path d="M6.16 6.16a9 9 0 1 0 12.68 12.68"/><line x1="2" y1="2" x2="22" y2="22"/>' : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'}</svg>
+      </button>
+      <button class="btn-icon danger" title="حذف" onclick="confirmDeleteAnn('${ann.id}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+      </button>
+    </div>
+  </div>`;
+}
+
+window.openAnnouncementModal = function (id = null) {
+  clearAnnForm();
+  document.getElementById('annModalTitle').textContent = id ? 'تعديل الإعلان' : 'إعلان جديد';
+  if (id) {
+    const ann = announcements.find(a => a.id === id);
+    if (ann) {
+      document.getElementById('annId').value       = ann.id;
+      document.getElementById('annTitle').value    = ann.title    || '';
+      document.getElementById('annMessage').value  = ann.message  || '';
+      document.getElementById('annType').value     = ann.type     || 'info';
+      document.getElementById('annUrl').value      = ann.actionUrl || '';
+      document.getElementById('annBtnText').value  = ann.actionBtnText || '';
+      document.getElementById('annPriority').value = ann.priority ?? 0;
+      document.getElementById('annStatus').checked = ann.status !== false;
+      if (ann.expiryDate) {
+        const d = new Date(ann.expiryDate);
+        document.getElementById('annExpiry').value = d.toISOString().slice(0,16);
+      }
+    }
+  }
+  document.getElementById('announcementModal').classList.add('active');
+};
+
+window.closeAnnouncementModal = function () {
+  document.getElementById('announcementModal').classList.remove('active');
+};
+
+function clearAnnForm() {
+  ['annId','annTitle','annMessage','annUrl','annBtnText','annPriority','annExpiry'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('annType').value    = 'info';
+  document.getElementById('annStatus').checked = true;
+}
+
+window.saveAnnouncement = async function () {
+  const id      = document.getElementById('annId').value.trim();
+  const title   = document.getElementById('annTitle').value.trim();
+  const message = document.getElementById('annMessage').value.trim();
+  const type    = document.getElementById('annType').value;
+  const url     = document.getElementById('annUrl').value.trim();
+  const btnText = document.getElementById('annBtnText').value.trim();
+  const priority = parseInt(document.getElementById('annPriority').value) || 0;
+  const status  = document.getElementById('annStatus').checked;
+  const expiry  = document.getElementById('annExpiry').value;
+
+  if (!title)   return notify('العنوان مطلوب', 'error');
+  if (!message) return notify('نص الإعلان مطلوب', 'error');
+
+  const data = {
+    title, message, type, priority, status,
+    actionUrl: url || '',
+    actionBtnText: btnText || '',
+    expiryDate: expiry ? new Date(expiry).toISOString() : '',
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    if (id) {
+      await updateDoc(doc(db, 'announcements', id), data);
+      notify('تم تحديث الإعلان بنجاح ✓');
+    } else {
+      data.createdAt = new Date().toISOString();
+      await addDoc(collection(db, 'announcements'), data);
+      notify('تم نشر الإعلان بنجاح ✓');
+    }
+    closeAnnouncementModal();
+    await loadAll();
+  } catch(e) {
+    notify('خطأ: ' + e.message, 'error');
+  }
+};
+
+window.toggleAnnStatus = async function (id, currentStatus) {
+  try {
+    await updateDoc(doc(db,'announcements',id), { status: !currentStatus });
+    notify(!currentStatus ? 'تم إظهار الإعلان' : 'تم إخفاء الإعلان');
+    await loadAll();
+  } catch(e) {
+    notify('خطأ: ' + e.message, 'error');
+  }
+};
+
+window.confirmDeleteAnn = function (id) {
+  document.getElementById('confirmMsg').textContent = 'هل أنت متأكد من حذف هذا الإعلان؟';
+  document.getElementById('confirmOk').onclick = async () => {
+    closeConfirm();
+    try {
+      await deleteDoc(doc(db,'announcements',id));
+      notify('تم حذف الإعلان');
+      await loadAll();
+    } catch(e) {
+      notify('خطأ: ' + e.message, 'error');
+    }
+  };
+  document.getElementById('confirmModal').classList.add('active');
+};
+
+// Patch showSection to handle announcements
+const _origShowSection = window.showSection;
+window.showSection = function (name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('section-' + name).classList.add('active');
+  const navBtns = document.querySelectorAll('.nav-item');
+  const idx = { categories:0, items:1, announcements:2 }[name] ?? 0;
+  if (navBtns[idx]) navBtns[idx].classList.add('active');
+};
