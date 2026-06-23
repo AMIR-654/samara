@@ -63,6 +63,7 @@ const FALLBACK_CONFIG = {
 let categoriesCache = [];
 let globalButtonsCache = [];
 let notificationsCache = [];
+let activeNotifUnsubscribe = null; // لإيقاف أي listener سابق قبل إرسال إشعار جديد
 
 const $ = (id) => document.getElementById(id);
 const categoriesBody = $("categoriesBody");
@@ -579,50 +580,27 @@ $("notifForm").addEventListener("submit", async (e) => {
   statusMsg.textContent = "جاري تحضير الإرسال وإبلاغ الخادم...";
 
   try {
-    // Save record to notifications collection with "pending" status to trigger backend function
-    const notifRef = db.collection("notifications").doc();
-    await notifRef.set({
+    // إشعار داخل التطبيق فقط — يُكتب مباشرة بحالة "delivered"
+    // بدون أي اعتماد على Cloud Functions أو إرسال Push حقيقي.
+    // التطبيق (الموبايل) بيقرا من نفس الكولكشن ويعرضها في شاشة الإشعارات تلقائيًا.
+    await db.collection("notifications").add({
       userId: "all",
       title,
       body,
       link: link || null,
-      deliveryStatus: "pending",
+      readStatus: false,
+      opened: false,
+      deliveryStatus: "delivered",
       createdAt: Date.now(),
     });
 
-    // Start a real-time listener to check results from backend trigger
-    const unsubscribe = notifRef.onSnapshot(async (docSnap) => {
-      const data = docSnap.data();
-      if (!data) return;
-
-      if (data.deliveryStatus === "delivered") {
-        unsubscribe();
-        statusMsg.style.color = "var(--success, #22c55e)";
-        statusMsg.textContent = `✅ تم الإرسال: ${data.successCount ?? 0} جهاز بنجاح${data.failureCount > 0 ? ` · ${data.failureCount} فشل` : ""}`;
-        sendBtn.disabled = false;
-        sendBtn.textContent = "🔔 إرسال للجميع";
-        $("notifForm").reset();
-        await loadNotifications();
-        calculateStats();
-        await loadDeviceStats();
-      } else if (data.deliveryStatus === "failed") {
-        unsubscribe();
-        statusMsg.style.color = "var(--danger, #ef4444)";
-        statusMsg.textContent = `❌ فشل الإرسال: ${data.failureReason || "عثر الخادم على خطأ أثناء معالجة الطلب."}`;
-        sendBtn.disabled = false;
-        sendBtn.textContent = "🔔 إرسال للجميع";
-        await loadNotifications();
-        calculateStats();
-        await loadDeviceStats();
-      }
-    }, (err) => {
-      console.error("onSnapshot error:", err);
-      unsubscribe();
-      statusMsg.style.color = "var(--danger, #ef4444)";
-      statusMsg.textContent = "❌ خطأ في الاتصال بقاعدة البيانات: " + err.message;
-      sendBtn.disabled = false;
-      sendBtn.textContent = "🔔 إرسال للجميع";
-    });
+    statusMsg.style.color = "var(--success, #22c55e)";
+    statusMsg.textContent = "✅ تم نشر الإشعار داخل التطبيق بنجاح";
+    sendBtn.disabled = false;
+    sendBtn.textContent = "🔔 إرسال للجميع";
+    $("notifForm").reset();
+    await loadNotifications();
+    calculateStats();
 
   } catch (err) {
     statusMsg.style.color = "var(--danger, #ef4444)";
