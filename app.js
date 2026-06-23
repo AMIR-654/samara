@@ -589,16 +589,11 @@ $("notifForm").addEventListener("submit", async (e) => {
 
     // Build per-device messages (respect per-device channel preference)
     const messages = tokenDocs.map((d) => {
-      const soundKey = d.sound || "default";
-      let channelId = "custom-sound"; // default channel with custom sound
-      if (soundKey.startsWith("sound")) {
-        // map sound1-4 → channel IDs registered in the app
-        const idx = soundKey.replace("sound", "");
-        channelId = `sound-preset-${idx}`;
-      }
+      const soundKey = d.selectedSound || d.sound || "default";
+      const channelId = d.channelId || "custom-sound";
       return {
         to: d.token,
-        sound: soundKey === "default" ? "default" : `${soundKey}.wav`,
+        sound: soundKey === "default" ? "default" : (soundKey.endsWith(".wav") ? soundKey : `${soundKey}.wav`),
         title,
         body,
         channelId,
@@ -630,8 +625,26 @@ $("notifForm").addEventListener("submit", async (e) => {
         for (let j = 0; j < result.data.length; j++) {
           const ticket = result.data[j];
           const isSuccess = ticket.status === "ok";
-          if (isSuccess) successCount++;
-          else failureCount++;
+          if (isSuccess) {
+            successCount++;
+          } else {
+            failureCount++;
+            // Automatically clean up invalid tokens
+            if (ticket.details && ticket.details.error === "DeviceNotRegistered") {
+              const failedToken = chunk[j].to;
+              db.collection("push_tokens")
+                .where("token", "==", failedToken)
+                .get()
+                .then((snap) => {
+                  snap.forEach((doc) => {
+                    doc.ref.delete().then(() => {
+                      console.log("Automatically removed invalid token from Firestore:", failedToken);
+                    });
+                  });
+                })
+                .catch((e) => console.error("Error deleting stale token doc:", e));
+            }
+          }
         }
       }
     }
@@ -655,6 +668,7 @@ $("notifForm").addEventListener("submit", async (e) => {
     $("notifForm").reset();
     await loadNotifications();
     calculateStats();
+    await loadDeviceStats(); // Refresh device stats
   } catch (err) {
     statusMsg.style.color = "var(--danger, #ef4444)";
     statusMsg.textContent = "❌ خطأ: " + err.message;
@@ -747,6 +761,50 @@ function calculateStats() {
   $("statsUnread").textContent = unread;
 }
 
+// ===== Device Statistics =====
+async function loadDeviceStats() {
+  try {
+    const snap = await db.collection("push_tokens").get();
+    const tokenDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const totalDevices = tokenDocs.length;
+    const activeTokens = tokenDocs.filter((d) => d.token).length;
+    const availableDevices = activeTokens;
+
+    let lastRegTimestamp = null;
+    tokenDocs.forEach((d) => {
+      if (d.updatedAt) {
+        if (!lastRegTimestamp || d.updatedAt > lastRegTimestamp) {
+          lastRegTimestamp = d.updatedAt;
+        }
+      }
+    });
+
+    const lastRegLabel = lastRegTimestamp 
+      ? new Date(lastRegTimestamp).toLocaleString("ar-EG") 
+      : "-";
+
+    $("statsDevices").textContent = totalDevices;
+    $("statsActiveTokens").textContent = activeTokens;
+    $("statsAvailableDevices").textContent = availableDevices;
+    $("statsLastReg").textContent = lastRegLabel;
+
+    // Conditionally show/hide warning message if it exists
+    const statusMsg = ["", "⚠️ لا توجد أجهزة مسجلة حتى الآن."];
+    const statusMsgElement = $("notifStatusMsg");
+    if (activeTokens === 0) {
+      statusMsgElement.textContent = "⚠️ لا توجد أجهزة مسجلة حتى الآن.";
+      statusMsgElement.style.color = "var(--text-muted)";
+    } else {
+      if (statusMsgElement.textContent === "⚠️ لا توجد أجهزة مسجلة حتى الآن.") {
+        statusMsgElement.textContent = "";
+      }
+    }
+  } catch (err) {
+    console.error("loadDeviceStats error:", err);
+  }
+}
+
 // ===== Init =====
 async function init() {
   await Promise.all([
@@ -754,6 +812,7 @@ async function init() {
     loadGlobalButtons(),
     loadSettings(),
     loadNotifications().then(calculateStats),
+    loadDeviceStats(),
   ]);
 }
 
