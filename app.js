@@ -575,104 +575,58 @@ $("notifForm").addEventListener("submit", async (e) => {
   const statusMsg = $("notifStatusMsg");
   sendBtn.disabled = true;
   sendBtn.textContent = "جاري الإرسال...";
-  statusMsg.textContent = "";
+  statusMsg.style.color = "var(--text-muted)";
+  statusMsg.textContent = "جاري تحضير الإرسال وإبلاغ الخادم...";
 
   try {
-    // Fetch all registered push tokens
-    const snap = await db.collection("push_tokens").get();
-    const tokenDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => d.token);
-
-    if (tokenDocs.length === 0) {
-      statusMsg.textContent = "⚠️ لا توجد أجهزة مسجلة حتى الآن.";
-      return;
-    }
-
-    // Build per-device messages (respect per-device channel preference)
-    const messages = tokenDocs.map((d) => {
-      const soundKey = d.selectedSound || d.sound || "default";
-      const channelId = d.channelId || "custom-sound";
-      return {
-        to: d.token,
-        sound: soundKey === "default" ? "default" : (soundKey.endsWith(".wav") ? soundKey : `${soundKey}.wav`),
-        title,
-        body,
-        channelId,
-        priority: "high",
-        data: {
-          screen: "notifications",
-          link: link || "",
-          createdAt: Date.now(),
-        },
-      };
-    });
-
-    let successCount = 0;
-    let failureCount = 0;
-    const now = Date.now();
-    const batch = db.batch();
-
-    // Send in chunks of 100 (Expo limit)
-    for (let i = 0; i < messages.length; i += 100) {
-      const chunk = messages.slice(i, i + 100);
-      const resp = await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(chunk),
-      });
-      const result = await resp.json();
-
-      if (result.data) {
-        for (let j = 0; j < result.data.length; j++) {
-          const ticket = result.data[j];
-          const isSuccess = ticket.status === "ok";
-          if (isSuccess) {
-            successCount++;
-          } else {
-            failureCount++;
-            // Automatically clean up invalid tokens
-            if (ticket.details && ticket.details.error === "DeviceNotRegistered") {
-              const failedToken = chunk[j].to;
-              db.collection("push_tokens")
-                .where("token", "==", failedToken)
-                .get()
-                .then((snap) => {
-                  snap.forEach((doc) => {
-                    doc.ref.delete().then(() => {
-                      console.log("Automatically removed invalid token from Firestore:", failedToken);
-                    });
-                  });
-                })
-                .catch((e) => console.error("Error deleting stale token doc:", e));
-            }
-          }
-        }
-      }
-    }
-
-    // Save one summary record to notifications collection
+    // Save record to notifications collection with "pending" status to trigger backend function
     const notifRef = db.collection("notifications").doc();
-    batch.set(notifRef, {
+    await notifRef.set({
       userId: "all",
       title,
       body,
       link: link || null,
-      deliveryStatus: successCount > 0 ? "delivered" : "failed",
-      readStatus: false,
-      opened: false,
-      createdAt: now,
+      deliveryStatus: "pending",
+      createdAt: Date.now(),
     });
-    await batch.commit();
 
-    statusMsg.style.color = successCount > 0 ? "var(--success, #22c55e)" : "var(--danger, #ef4444)";
-    statusMsg.textContent = `✅ تم الإرسال: ${successCount} جهاز بنجاح${failureCount > 0 ? ` · ${failureCount} فشل` : ""}`;
-    $("notifForm").reset();
-    await loadNotifications();
-    calculateStats();
-    await loadDeviceStats(); // Refresh device stats
+    // Start a real-time listener to check results from backend trigger
+    const unsubscribe = notifRef.onSnapshot(async (docSnap) => {
+      const data = docSnap.data();
+      if (!data) return;
+
+      if (data.deliveryStatus === "delivered") {
+        unsubscribe();
+        statusMsg.style.color = "var(--success, #22c55e)";
+        statusMsg.textContent = `✅ تم الإرسال: ${data.successCount ?? 0} جهاز بنجاح${data.failureCount > 0 ? ` · ${data.failureCount} فشل` : ""}`;
+        sendBtn.disabled = false;
+        sendBtn.textContent = "🔔 إرسال للجميع";
+        $("notifForm").reset();
+        await loadNotifications();
+        calculateStats();
+        await loadDeviceStats();
+      } else if (data.deliveryStatus === "failed") {
+        unsubscribe();
+        statusMsg.style.color = "var(--danger, #ef4444)";
+        statusMsg.textContent = `❌ فشل الإرسال: ${data.failureReason || "عثر الخادم على خطأ أثناء معالجة الطلب."}`;
+        sendBtn.disabled = false;
+        sendBtn.textContent = "🔔 إرسال للجميع";
+        await loadNotifications();
+        calculateStats();
+        await loadDeviceStats();
+      }
+    }, (err) => {
+      console.error("onSnapshot error:", err);
+      unsubscribe();
+      statusMsg.style.color = "var(--danger, #ef4444)";
+      statusMsg.textContent = "❌ خطأ في الاتصال بقاعدة البيانات: " + err.message;
+      sendBtn.disabled = false;
+      sendBtn.textContent = "🔔 إرسال للجميع";
+    });
+
   } catch (err) {
     statusMsg.style.color = "var(--danger, #ef4444)";
     statusMsg.textContent = "❌ خطأ: " + err.message;
-  } finally {
     sendBtn.disabled = false;
     sendBtn.textContent = "🔔 إرسال للجميع";
   }
