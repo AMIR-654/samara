@@ -719,7 +719,6 @@ async function sendPushForAnnouncement(announcementId, title, body) {
     console.error("Push send error:", err);
   }
   }
-}
 
 // ===== Notifications Management =====
 let notificationsCache = [];
