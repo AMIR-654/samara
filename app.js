@@ -62,6 +62,7 @@ const FALLBACK_CONFIG = {
 // ===== State =====
 let categoriesCache = [];
 let globalButtonsCache = [];
+let notificationsCache = [];
 
 const $ = (id) => document.getElementById(id);
 const categoriesBody = $("categoriesBody");
@@ -92,10 +93,6 @@ function statusBadge(status) {
 
 function sortByOrder(arr) {
   return [...arr].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999));
-}
-
-function getIconSvg(name) {
-  return name || "radio-button-off";
 }
 
 // ===== Tabs =====
@@ -241,7 +238,7 @@ function renderItems() {
         (item, i) => `
       <div class="item-entry">
         <div class="item-info">
-          <span class="item-icon">${getIconSvg(item.icon)}</span>
+          <span class="item-icon">${item.icon || "•"}</span>
           <span class="item-title">${item.title}</span>
           <span class="item-status">${statusBadge(item.status)}</span>
         </div>
@@ -433,7 +430,7 @@ window.deleteGlobalBtn = async (id) => {
   }
 };
 
-// ===== Import App Data (manual migration) =====
+// ===== Import App Data =====
 async function importAppData() {
   const importBtn = $("importAppDataBtn");
   const importStatus = $("importAppDataStatus");
@@ -503,11 +500,8 @@ async function importAppData() {
       globalsAdded++;
     }
 
-    if (ops.length > 0) {
-      await Promise.all(ops);
-    }
+    if (ops.length > 0) await Promise.all(ops);
 
-    // Ensure default settings exist
     await db.collection("settings").doc("app").set({
       migrated: true,
       version: FALLBACK_CONFIG.version,
@@ -515,9 +509,10 @@ async function importAppData() {
       phone: FALLBACK_CONFIG.phone,
     }, { merge: true });
 
-    importStatus.textContent = `تم الاستيراد بنجاح: ${catsAdded} فئة, ${itemsAdded} عنصر, ${globalsAdded} زر سريع`;
     if (catsAdded === 0 && itemsAdded === 0 && globalsAdded === 0) {
       importStatus.textContent = "جميع البيانات موجودة مسبقاً. لم يتم استيراد أي عنصر جديد.";
+    } else {
+      importStatus.textContent = `تم الاستيراد بنجاح: ${catsAdded} فئة, ${itemsAdded} عنصر, ${globalsAdded} زر سريع`;
     }
 
     await Promise.all([loadCategories(), loadGlobalButtons()]);
@@ -568,137 +563,60 @@ $("settingsForm").addEventListener("submit", async (e) => {
   }
 });
 
-// ===== Announcements =====
-let announcementsCache = [];
-const announcementsBody = $("announcementsBody");
-
-async function loadAnnouncements() {
-  const snap = await db.collection("announcements").orderBy("createdAt", "desc").get();
-  announcementsCache = [];
-  snap.forEach((d) => announcementsCache.push({ id: d.id, ...d.data() }));
-  renderAnnouncements();
-}
-
-function renderAnnouncements() {
-  if (!announcementsCache.length) {
-    announcementsBody.innerHTML =
-      '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">لا توجد إعلانات بعد</td></tr>';
-    return;
-  }
-  announcementsBody.innerHTML = announcementsCache
-    .map(
-      (a) => `
-    <tr>
-      <td><span class="type-badge ${a.type || "news"}">${a.type === "promotion" ? "عرض" : a.type === "maintenance" ? "صيانة" : a.type === "warning" ? "تنبيه" : "أخبار"}</span></td>
-      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><strong>${a.title}</strong></td>
-      <td>${statusBadge(a.status)}</td>
-      <td>${a.priority ?? 0}</td>
-      <td style="font-size:12px;">${a.expiresAt ? new Date(a.expiresAt).toLocaleDateString("ar-SA") : "-"}</td>
-      <td>${a.sendNotification ? "🔔" : "-"}</td>
-      <td>
-        <div class="action-btns">
-          <button class="btn btn-sm btn-primary" onclick="editAnnouncement('${a.id}')">تعديل</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteAnnouncement('${a.id}')">حذف</button>
-        </div>
-      </td>
-    </tr>`
-    )
-    .join("");
-}
-
-function openAnnouncementModal(a) {
-  $("announcementModalTitle").textContent = a ? "تعديل إعلان" : "إضافة إعلان";
-  $("announcementId").value = a ? a.id : "";
-  $("announcementTitle").value = a ? a.title : "";
-  $("announcementShortText").value = a ? a.shortText || "" : "";
-  $("announcementDescription").value = a ? a.description || "" : "";
-  $("announcementType").value = a ? a.type || "news" : "news";
-  $("announcementImageUrl").value = a ? a.imageUrl || "" : "";
-  $("announcementUrl").value = a ? a.url || "" : "";
-  $("announcementWhatsapp").value = a ? a.whatsapp || "" : "";
-  $("announcementPhone").value = a ? a.phone || "" : "";
-  $("announcementPriority").value = a ? a.priority ?? 0 : 0;
-  $("announcementExpiresAt").value = a && a.expiresAt
-    ? new Date(a.expiresAt).toISOString().slice(0, 16)
-    : "";
-  $("announcementStatus").value = a ? a.status || "active" : "active";
-  $("announcementSendNotification").checked = a ? !!a.sendNotification : false;
-  $("announcementModal").classList.add("open");
-}
-
-$("addAnnouncementBtn").addEventListener("click", () => openAnnouncementModal(null));
-$("announcementModalClose").addEventListener("click", () => $("announcementModal").classList.remove("open"));
-
-$("announcementForm").addEventListener("submit", async (e) => {
+// ===== Notifications — Simple Send =====
+$("notifForm").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const id = $("announcementId").value.trim();
-  const now = Date.now();
-  const expiresAtStr = $("announcementExpiresAt").value;
-  const data = {
-    title: $("announcementTitle").value.trim(),
-    shortText: $("announcementShortText").value.trim(),
-    description: $("announcementDescription").value.trim(),
-    type: $("announcementType").value,
-    imageUrl: $("announcementImageUrl").value.trim() || null,
-    url: $("announcementUrl").value.trim() || null,
-    whatsapp: $("announcementWhatsapp").value.trim() || null,
-    phone: $("announcementPhone").value.trim() || null,
-    priority: parseInt($("announcementPriority").value) || 0,
-    status: $("announcementStatus").value,
-    sendNotification: $("announcementSendNotification").checked,
-    expiresAt: expiresAtStr ? new Date(expiresAtStr).getTime() : null,
-    updatedAt: now,
-  };
-  try {
-    if (id) {
-      await db.collection("announcements").doc(id).update(data);
-    } else {
-      data.createdAt = now;
-      const ref = await db.collection("announcements").add(data);
-      // Send push notification if requested
-      if (data.sendNotification) {
-        await sendPushForAnnouncement(ref.id, data.title, data.shortText || data.description);
-      }
-    }
-    $("announcementModal").classList.remove("open");
-    await loadAnnouncements();
-  } catch (err) {
-    alert("خطأ: " + err.message);
-  }
-});
 
-window.editAnnouncement = (id) => {
-  const a = announcementsCache.find((x) => x.id === id);
-  if (a) openAnnouncementModal(a);
-};
+  const title = $("notifTitle").value.trim();
+  const body = $("notifBody").value.trim();
+  const link = $("notifLink").value.trim() || null;
 
-window.deleteAnnouncement = async (id) => {
-  if (!confirm("حذف هذا الإعلان؟")) return;
-  try {
-    await db.collection("announcements").doc(id).delete();
-    await loadAnnouncements();
-  } catch (err) {
-    alert("خطأ: " + err.message);
-  }
-};
+  const sendBtn = $("sendNotifBtn");
+  const statusMsg = $("notifStatusMsg");
+  sendBtn.disabled = true;
+  sendBtn.textContent = "جاري الإرسال...";
+  statusMsg.textContent = "";
 
-async function sendPushForAnnouncement(announcementId, title, body) {
   try {
-    const tokensSnap = await db.collection("push_tokens").get();
-    const tokens = tokensSnap.docs.map((d) => d.data().token).filter(Boolean);
-    if (tokens.length === 0) {
-      console.log("No push tokens found");
+    // Fetch all registered push tokens
+    const snap = await db.collection("push_tokens").get();
+    const tokenDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((d) => d.token);
+
+    if (tokenDocs.length === 0) {
+      statusMsg.textContent = "⚠️ لا توجد أجهزة مسجلة حتى الآن.";
       return;
     }
-    const messages = tokens.map((token) => ({
-      to: token,
-      sound: "default",
-      title: title,
-      body: body,
-      data: { announcementId, screen: "announcements" },
-    }));
-    let success = 0;
-    let failure = 0;
+
+    // Build per-device messages (respect per-device channel preference)
+    const messages = tokenDocs.map((d) => {
+      const soundKey = d.sound || "default";
+      let channelId = "custom-sound"; // default channel with custom sound
+      if (soundKey.startsWith("sound")) {
+        // map sound1-4 → channel IDs registered in the app
+        const idx = soundKey.replace("sound", "");
+        channelId = `sound-preset-${idx}`;
+      }
+      return {
+        to: d.token,
+        sound: soundKey === "default" ? "default" : `${soundKey}.wav`,
+        title,
+        body,
+        channelId,
+        priority: "high",
+        data: {
+          screen: "notifications",
+          link: link || "",
+          createdAt: Date.now(),
+        },
+      };
+    });
+
+    let successCount = 0;
+    let failureCount = 0;
+    const now = Date.now();
+    const batch = db.batch();
+
+    // Send in chunks of 100 (Expo limit)
     for (let i = 0; i < messages.length; i += 100) {
       const chunk = messages.slice(i, i + 100);
       const resp = await fetch("https://exp.host/--/api/v2/push/send", {
@@ -707,346 +625,94 @@ async function sendPushForAnnouncement(announcementId, title, body) {
         body: JSON.stringify(chunk),
       });
       const result = await resp.json();
+
       if (result.data) {
-        for (const ticket of result.data) {
-          if (ticket.status === "ok") success++;
-          else failure++;
+        for (let j = 0; j < result.data.length; j++) {
+          const ticket = result.data[j];
+          const isSuccess = ticket.status === "ok";
+          if (isSuccess) successCount++;
+          else failureCount++;
         }
       }
     }
-    console.log(`Push sent: ${success} success, ${failure} failure`);
-  } catch (err) {
-    console.error("Push send error:", err);
-  }
-  }
 
-// ===== Notifications Management =====
-let notificationsCache = [];
-let templatesCache = [];
-
-const targetTypeSelect = $("notifTargetType");
-const targetInputWrapper = $("notifTargetInputWrapper");
-const targetLabel = $("notifTargetLabel");
-const targetValueInput = $("notifTargetValue");
-
-targetTypeSelect.addEventListener("change", () => {
-  const type = targetTypeSelect.value;
-  if (type === "all") {
-    targetInputWrapper.style.display = "none";
-    targetValueInput.required = false;
-  } else {
-    targetInputWrapper.style.display = "block";
-    targetValueInput.required = true;
-    if (type === "single") {
-      targetLabel.textContent = "رقم الكارت (User ID)";
-      targetValueInput.placeholder = "مثال: 12345";
-    } else {
-      targetLabel.textContent = "أرقام الكروت (مفصولة بفاصلة)";
-      targetValueInput.placeholder = "مثال: 12345, 67890, 11223";
-    }
-  }
-});
-
-$("saveTemplateBtn").addEventListener("click", async () => {
-  const title = $("notifTitle").value.trim();
-  const body = $("notifBody").value.trim();
-  const type = $("notifType").value;
-
-  if (!title || !body) {
-    alert("يرجى ملء العنوان ونص الرسالة لحفظ القالب.");
-    return;
-  }
-
-  try {
-    await db.collection("notification_templates").add({
+    // Save one summary record to notifications collection
+    const notifRef = db.collection("notifications").doc();
+    batch.set(notifRef, {
+      userId: "all",
       title,
       body,
-      type,
-      createdAt: Date.now()
+      link: link || null,
+      deliveryStatus: successCount > 0 ? "delivered" : "failed",
+      readStatus: false,
+      opened: false,
+      createdAt: now,
     });
-    alert("تم حفظ القالب بنجاح");
-    await loadTemplates();
-  } catch (err) {
-    alert("خطأ في حفظ القالب: " + err.message);
-  }
-});
+    await batch.commit();
 
-async function loadTemplates() {
-  const snap = await db.collection("notification_templates").orderBy("createdAt", "desc").get();
-  templatesCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  renderTemplates();
-}
-
-function renderTemplates() {
-  const list = $("templatesList");
-  if (templatesCache.length === 0) {
-    list.innerHTML = `<p style="color:var(--text-muted);font-size:12px;text-align:center;padding:16px;">لا توجد قوالب محفوظة</p>`;
-    return;
-  }
-
-  list.innerHTML = templatesCache.map(tpl => `
-    <div class="template-card" onclick="loadTemplateIntoForm('${tpl.id}')">
-      <div class="template-info">
-        <span class="template-title">${tpl.title}</span>
-        <span class="template-body">${tpl.body}</span>
-      </div>
-      <button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); deleteTemplate('${tpl.id}')">&times;</button>
-    </div>
-  `).join("");
-}
-
-window.loadTemplateIntoForm = (id) => {
-  const tpl = templatesCache.find(t => t.id === id);
-  if (tpl) {
-    $("notifTitle").value = tpl.title;
-    $("notifBody").value = tpl.body;
-    $("notifType").value = tpl.type;
-  }
-};
-
-window.deleteTemplate = async (id) => {
-  if (!confirm("هل تريد حذف هذا القالب؟")) return;
-  try {
-    await db.collection("notification_templates").doc(id).delete();
-    await loadTemplates();
-  } catch (err) {
-    alert("خطأ: " + err.message);
-  }
-};
-
-$("notifForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const targetType = targetTypeSelect.value;
-  let targetVal = targetType === "all" ? "all" : $("notifTargetValue").value.trim();
-  const type = $("notifType").value;
-  const title = $("notifTitle").value.trim();
-  const body = $("notifBody").value.trim();
-  const scheduledTimeStr = $("notifScheduledAt").value;
-
-  const sendBtn = $("sendNotifBtn");
-  sendBtn.disabled = true;
-  sendBtn.textContent = "جاري المعالجة...";
-
-  try {
-    let scheduledAt = null;
-    if (scheduledTimeStr) {
-      scheduledAt = new Date(scheduledTimeStr).getTime();
-    }
-
-    if (scheduledAt && scheduledAt > Date.now()) {
-      // Scheduled delivery: Write to database only. Cloud Function runs execution.
-      await db.collection("notifications").add({
-        userId: targetVal,
-        title,
-        body,
-        type,
-        readStatus: false,
-        deliveryStatus: "scheduled",
-        opened: false,
-        scheduledAt,
-        createdAt: Date.now()
-      });
-      alert("تمت جدولة الإشعار بنجاح في قاعدة البيانات");
-    } else {
-      // Immediate delivery
-      let targetTokens = [];
-      let tokenToUserMap = {};
-
-      if (targetVal === "all") {
-        const snap = await db.collection("push_tokens").get();
-        snap.forEach(doc => {
-          const d = doc.data();
-          if (d.token) {
-            targetTokens.push(d.token);
-            tokenToUserMap[d.token] = d.userId || "anonymous";
-          }
-        });
-      } else {
-        const userIds = targetVal.split(",").map(u => u.trim()).filter(Boolean);
-        const snap = await db.collection("push_tokens").get();
-        snap.forEach(doc => {
-          const d = doc.data();
-          const tokenUserId = d.userId || "anonymous";
-          if (d.token && userIds.includes(tokenUserId)) {
-            targetTokens.push(d.token);
-            tokenToUserMap[d.token] = tokenUserId;
-          }
-        });
-      }
-
-      if (targetTokens.length === 0) {
-        alert("لم يتم العثور على أجهزة مسجلة لهذا المستلم.");
-        sendBtn.disabled = false;
-        sendBtn.textContent = "إرسال / جدولة";
-        return;
-      }
-
-      const messages = targetTokens.map(token => ({
-        to: token,
-        sound: "notification.wav",
-        title,
-        body,
-        channelId: "custom-sound",
-        priority: "high",
-        data: {
-          screen: "notifications",
-          type: type || "info",
-          createdAt: Date.now()
-        }
-      }));
-
-      let successCount = 0;
-      let failureCount = 0;
-      const docBatch = db.batch();
-
-      for (let i = 0; i < messages.length; i += 100) {
-        const chunk = messages.slice(i, i + 100);
-        const resp = await fetch("https://exp.host/--/api/v2/push/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(chunk)
-        });
-        const result = await resp.json();
-        
-        if (result.data) {
-          for (let j = 0; j < result.data.length; j++) {
-            const ticket = result.data[j];
-            const token = chunk[j].to;
-            const recipientUserId = tokenToUserMap[token] || "anonymous";
-            const isSuccess = ticket.status === "ok";
-
-            if (isSuccess) successCount++;
-            else failureCount++;
-
-            const notifRef = db.collection("notifications").doc();
-            docBatch.set(notifRef, {
-              userId: recipientUserId,
-              token: token,
-              title,
-              body,
-              type,
-              readStatus: false,
-              deliveryStatus: isSuccess ? "delivered" : "failed",
-              opened: false,
-              createdAt: Date.now()
-            });
-          }
-        }
-      }
-
-      if (targetVal === "all" || targetVal.includes(",")) {
-        const parentRef = db.collection("notifications").doc();
-        docBatch.set(parentRef, {
-          userId: targetVal,
-          title,
-          body,
-          type,
-          readStatus: false,
-          deliveryStatus: successCount > 0 ? "delivered" : "failed",
-          opened: false,
-          createdAt: Date.now()
-        });
-      }
-
-      await docBatch.commit();
-      alert(`تم الإرسال بنجاح. نجاح: ${successCount}، فشل: ${failureCount}`);
-    }
-
+    statusMsg.style.color = successCount > 0 ? "var(--success, #22c55e)" : "var(--danger, #ef4444)";
+    statusMsg.textContent = `✅ تم الإرسال: ${successCount} جهاز بنجاح${failureCount > 0 ? ` · ${failureCount} فشل` : ""}`;
     $("notifForm").reset();
-    targetInputWrapper.style.display = "none";
-    
-    await Promise.all([loadNotifications(), calculateStats()]);
+    await loadNotifications();
+    calculateStats();
   } catch (err) {
-    alert("خطأ في معالجة الإشعار: " + err.message);
+    statusMsg.style.color = "var(--danger, #ef4444)";
+    statusMsg.textContent = "❌ خطأ: " + err.message;
   } finally {
     sendBtn.disabled = false;
-    sendBtn.textContent = "إرسال / جدولة";
+    sendBtn.textContent = "🔔 إرسال للجميع";
   }
 });
 
+// ===== Notifications History =====
 async function loadNotifications() {
   const snap = await db.collection("notifications").orderBy("createdAt", "desc").get();
-  notificationsCache = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  notificationsCache = snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   renderNotifications();
 }
 
 function renderNotifications() {
   const body = $("notifHistoryBody");
-  const searchVal = $("notifSearch").value.toLowerCase();
-  const filterType = $("notifFilterType").value;
+  const searchVal = ($("notifSearch").value || "").toLowerCase();
   const filterStatus = $("notifFilterStatus").value;
 
-  const filtered = notificationsCache.filter(n => {
-    const matchesSearch = 
-      n.userId.toLowerCase().includes(searchVal) ||
+  const filtered = notificationsCache.filter((n) => {
+    const matchesSearch =
       (n.title && n.title.toLowerCase().includes(searchVal)) ||
       (n.body && n.body.toLowerCase().includes(searchVal));
-
-    const matchesType = !filterType || n.type === filterType;
     const matchesStatus = !filterStatus || n.deliveryStatus === filterStatus;
-
-    return matchesSearch && matchesType && matchesStatus;
+    return matchesSearch && matchesStatus;
   });
 
-  if (filtered.length === 0) {
-    body.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:32px;">لا توجد سجلات مطابقة</td></tr>`;
+  if (!filtered.length) {
+    body.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px;">لا توجد سجلات مطابقة</td></tr>`;
     return;
   }
 
-  body.innerHTML = filtered.map(n => {
-    let typeLabel = "معلومة";
-    if (n.type === "promo") typeLabel = "عرض";
-    else if (n.type === "alert") typeLabel = "تنبيه";
-    else if (n.type === "announcement") typeLabel = "إعلان";
-
-    let dateLabel = "-";
-    if (n.deliveryStatus === "scheduled" && n.scheduledAt) {
-      dateLabel = new Date(n.scheduledAt).toLocaleString("ar-EG");
-    } else if (n.createdAt) {
-      dateLabel = new Date(n.createdAt).toLocaleString("ar-EG");
-    }
-
-    let statusLabel = "معلق";
-    let statusClass = "unread";
-    if (n.deliveryStatus === "delivered") {
-      statusLabel = "تم التسليم";
-      statusClass = "delivered";
-    } else if (n.deliveryStatus === "failed") {
-      statusLabel = "فشل";
-      statusClass = "failed";
-    } else if (n.deliveryStatus === "scheduled") {
-      statusLabel = "مجدول";
-      statusClass = "scheduled";
-    }
-
-    let interactionLabel = "-";
-    if (n.opened) {
-      interactionLabel = "مفتوح";
-    } else if (n.readStatus) {
-      interactionLabel = "مقروء";
-    } else if (n.deliveryStatus === "delivered") {
-      interactionLabel = "غير مقروء";
-    }
-
-    return `
-      <tr>
-        <td><code>${n.userId}</code></td>
-        <td><span class="type-badge ${n.type || "info"}">${typeLabel}</span></td>
-        <td><strong>${n.title || ""}</strong></td>
-        <td><span style="font-size:12px;color:var(--text-muted);">${n.body || ""}</span></td>
-        <td style="font-size:12px;">${dateLabel}</td>
-        <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
-        <td><span style="font-size:11px;font-weight:600;">${interactionLabel}</span></td>
-        <td>
-          <button class="btn btn-sm btn-danger" onclick="deleteHistoryItem('${n.id}')">حذف</button>
-        </td>
-      </tr>
-    `;
-  }).join("");
+  body.innerHTML = filtered
+    .map((n) => {
+      const dateLabel = n.createdAt ? new Date(n.createdAt).toLocaleString("ar-EG") : "-";
+      const isDelivered = n.deliveryStatus === "delivered";
+      const statusLabel = isDelivered ? "تم التسليم" : n.deliveryStatus === "failed" ? "فشل" : "معلق";
+      const statusClass = isDelivered ? "delivered" : n.deliveryStatus === "failed" ? "failed" : "unread";
+      const linkCell = n.link ? `<a href="${n.link}" target="_blank" style="direction:ltr;font-size:11px;word-break:break-all;">${n.link}</a>` : "-";
+      return `
+        <tr>
+          <td><strong>${n.title || ""}</strong></td>
+          <td style="font-size:12px;color:var(--text-muted);">${n.body || ""}</td>
+          <td>${linkCell}</td>
+          <td style="font-size:12px;">${dateLabel}</td>
+          <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+          <td>
+            <button class="btn btn-sm btn-danger" onclick="deleteHistoryItem('${n.id}')">حذف</button>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
 }
 
 $("notifSearch").addEventListener("input", renderNotifications);
-$("notifFilterType").addEventListener("change", renderNotifications);
 $("notifFilterStatus").addEventListener("change", renderNotifications);
 
 window.deleteHistoryItem = async (id) => {
@@ -1054,29 +720,24 @@ window.deleteHistoryItem = async (id) => {
   try {
     await db.collection("notifications").doc(id).delete();
     await loadNotifications();
-    await calculateStats();
+    calculateStats();
   } catch (err) {
     alert("خطأ في الحذف: " + err.message);
   }
 };
 
-async function calculateStats() {
+function calculateStats() {
   let sent = 0;
   let delivered = 0;
   let opened = 0;
   let unread = 0;
 
-  notificationsCache.forEach(n => {
-    if (n.deliveryStatus !== "scheduled") {
-      sent++;
-      if (n.deliveryStatus === "delivered") {
-        delivered++;
-        if (n.opened) {
-          opened++;
-        } else if (!n.readStatus) {
-          unread++;
-        }
-      }
+  notificationsCache.forEach((n) => {
+    sent++;
+    if (n.deliveryStatus === "delivered") {
+      delivered++;
+      if (n.opened) opened++;
+      else if (!n.readStatus) unread++;
     }
   });
 
@@ -1089,14 +750,11 @@ async function calculateStats() {
 // ===== Init =====
 async function init() {
   await Promise.all([
-    loadCategories(), 
-    loadGlobalButtons(), 
-    loadAnnouncements(), 
+    loadCategories(),
+    loadGlobalButtons(),
     loadSettings(),
-    loadTemplates(),
-    loadNotifications().then(calculateStats)
+    loadNotifications().then(calculateStats),
   ]);
 }
 
 init();
-
