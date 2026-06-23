@@ -24,7 +24,6 @@
       <button class="tab" data-tab="global">الأزرار السريعة</button>
       <button class="tab" data-tab="announcements">الإعلانات</button>
       <button class="tab" data-tab="notifications">الإشعارات</button>
-      <button class="tab" data-tab="sessions">المستخدمون</button>
       <button class="tab" data-tab="settings">الإعدادات</button>
     </nav>
 
@@ -275,60 +274,6 @@
           استيراد بيانات التطبيق الحالية
         </button>
         <p id="importAppDataStatus" style="margin-top:10px;font-size:13px;color:var(--text-muted);"></p>
-      </div>
-    </section>
-
-    <!-- User Sessions Tab -->
-    <section id="tab-sessions" class="tab-content">
-      <div class="section-header">
-        <h2>سجل جلسات المستخدمين</h2>
-        <div style="display:flex;gap:8px;align-items:center;">
-          <input type="text" id="sessionSearch" placeholder="بحث برقم الكارت..." class="filter-input" />
-          <select id="sessionFilter" class="filter-select">
-            <option value="">جميع الجلسات</option>
-            <option value="active">نشط الآن</option>
-            <option value="inactive">غير نشط</option>
-          </select>
-          <button class="btn btn-outline" id="refreshSessionsBtn" onclick="loadSessions()">↻ تحديث</button>
-        </div>
-      </div>
-
-      <!-- Session Stats -->
-      <div class="stats-grid" style="margin-bottom:20px;">
-        <div class="stat-card">
-          <span class="stat-num" id="sessionsTotal">0</span>
-          <span class="stat-label">إجمالي المستخدمين</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-num" id="sessionsActive">0</span>
-          <span class="stat-label">نشط الآن</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-num" id="sessionsWithToken">0</span>
-          <span class="stat-label">لديه إشعارات</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-num" id="sessionsInactive">0</span>
-          <span class="stat-label">غير نشط</span>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>رقم الكارت</th>
-              <th>الحالة</th>
-              <th>الجهاز</th>
-              <th>آخر دخول</th>
-              <th>آخر خروج</th>
-              <th>رمز الإشعار</th>
-            </tr>
-          </thead>
-          <tbody id="sessionsBody">
-            <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">جاري التحميل...</td></tr>
-          </tbody>
-        </table>
       </div>
     </section>
 
