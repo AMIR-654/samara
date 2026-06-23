@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Samara — لوحة الإدارة</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="container header-inner">
+      <h1>Samara <span class="sub">لوحة الإدارة</span></h1>
+      <div class="header-status">
+        <span class="status-dot" id="fbStatus"></span>
+        <span id="fbStatusText">جاري الاتصال بـ Firebase...</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="categories">الفئات</button>
+      <button class="tab" data-tab="global">الأزرار السريعة</button>
+      <button class="tab" data-tab="announcements">الإعلانات</button>
+      <button class="tab" data-tab="notifications">الإشعارات</button>
+      <button class="tab" data-tab="sessions">المستخدمون</button>
+      <button class="tab" data-tab="settings">الإعدادات</button>
+    </nav>
+
+    <!-- Categories Tab -->
+    <section id="tab-categories" class="tab-content active">
+      <div class="section-header">
+        <h2>إدارة الفئات</h2>
+        <button class="btn btn-primary" id="addCategoryBtn">+ إضافة فئة</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الترتيب</th>
+              <th>المعرف</th>
+              <th>العنوان</th>
+              <th>الأيقونة</th>
+              <th>الحالة</th>
+              <th>العناصر</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="categoriesBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Global Buttons Tab -->
+    <section id="tab-global" class="tab-content">
+      <div class="section-header">
+        <h2>الأزرار السريعة</h2>
+        <button class="btn btn-primary" id="addGlobalBtn">+ إضافة زر</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الترتيب</th>
+              <th>المعرف</th>
+              <th>العنوان</th>
+              <th>الأيقونة</th>
+              <th>الرابط</th>
+              <th>الحالة</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="globalButtonsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Announcements Tab -->
+    <section id="tab-announcements" class="tab-content">
+      <div class="section-header">
+        <h2>إدارة الإعلانات</h2>
+        <button class="btn btn-primary" id="addAnnouncementBtn">+ إضافة إعلان</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>النوع</th>
+              <th>العنوان</th>
+              <th>الحالة</th>
+              <th>الأولوية</th>
+              <th>انتهاء</th>
+              <th>إشعار</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="announcementsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Notifications Tab -->
+    <section id="tab-notifications" class="tab-content">
+      <div class="section-header">
+        <h2>إدارة الإشعارات والجدولة</h2>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="stat-num" id="statsSent">0</span>
+          <span class="stat-label">إجمالي المرسل</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num" id="statsDelivered">0</span>
+          <span class="stat-label">تم تسليمها</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num" id="statsOpened">0</span>
+          <span class="stat-label">تم فتحها</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num" id="statsUnread">0</span>
+          <span class="stat-label">غير مقروءة</span>
+        </div>
+      </div>
+
+      <div class="notif-grid">
+        <!-- New Notification Form -->
+        <div class="notif-form-panel">
+          <h3>إرسال إشعار جديد</h3>
+          <form id="notifForm">
+            <div class="form-group">
+              <label>المستلم</label>
+              <select id="notifTargetType">
+                <option value="all">جميع المستخدمين</option>
+                <option value="single">مستخدم واحد (رقم الكارت)</option>
+                <option value="multiple">مستخدمين متعددين (أرقام كروت مفصولة بفاصلة)</option>
+              </select>
+            </div>
+            
+            <div class="form-group" id="notifTargetInputWrapper" style="display:none;">
+              <label id="notifTargetLabel">رقم الكارت</label>
+              <input type="text" id="notifTargetValue" placeholder="مثال: 12345" />
+            </div>
+
+            <div class="form-group">
+              <label>نوع الإشعار</label>
+              <select id="notifType">
+                <option value="info">معلومة (Info)</option>
+                <option value="promo">عرض (Promo)</option>
+                <option value="alert">تنبيه (Alert)</option>
+                <option value="announcement">إعلان هام (Announcement)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="notifTitle" required />
+            </div>
+
+            <div class="form-group">
+              <label>نص الرسالة</label>
+              <textarea id="notifBody" rows="3" required style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>وقت الجدولة (اختياري - اتركه فارغاً للإرسال الفوري)</label>
+              <input type="datetime-local" id="notifScheduledAt" />
+            </div>
+
+            <div class="action-btns" style="margin-top:16px;">
+              <button type="submit" class="btn btn-primary" id="sendNotifBtn">إرسال / جدولة</button>
+              <button type="button" class="btn btn-outline" id="saveTemplateBtn">حفظ كقالب</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Templates Panel -->
+        <div class="notif-templates-panel">
+          <h3>قوالب الإشعارات</h3>
+          <div id="templatesList" class="templates-list">
+            <!-- Loaded dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- History and Filters -->
+      <div class="history-section" style="margin-top:32px;">
+        <div class="section-header">
+          <h3>سجل الإشعارات</h3>
+          <div class="filter-bar">
+            <input type="text" id="notifSearch" placeholder="بحث في المستلم أو العنوان..." />
+            <select id="notifFilterType">
+              <option value="">جميع الأنواع</option>
+              <option value="info">معلومة</option>
+              <option value="promo">عرض</option>
+              <option value="alert">تنبيه</option>
+              <option value="announcement">إعلان</option>
+            </select>
+            <select id="notifFilterStatus">
+              <option value="">جميع الحالات</option>
+              <option value="delivered">تم التسليم</option>
+              <option value="failed">فشل الإرسال</option>
+              <option value="scheduled">مجدول</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>المستلم</th>
+                <th>النوع</th>
+                <th>العنوان</th>
+                <th>الرسالة</th>
+                <th>الوقت</th>
+                <th>الحالة</th>
+                <th>التفاعل</th>
+                <th>الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="notifHistoryBody">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Settings Tab -->
+    <section id="tab-settings" class="tab-content">
+      <h2>إعدادات التطبيق</h2>
+      <form id="settingsForm" class="settings-form">
+        <div class="form-group">
+          <label>رقم الإصدار</label>
+          <input type="number" id="settingsVersion" min="1" step="1" />
+        </div>
+        <div class="form-group">
+          <label>المظهر الافتراضي</label>
+          <select id="settingsTheme">
+            <option value="system">حسب النظام</option>
+            <option value="light">فاتح</option>
+            <option value="dark">داكن</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>وضع الصيانة</label>
+          <select id="settingsMaintenance">
+            <option value="false">معطل</option>
+            <option value="true">مفعل</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>رقم واتساب</label>
+          <input type="text" id="settingsWhatsapp" placeholder="+201091940111" dir="ltr" />
+        </div>
+        <div class="form-group">
+          <label>رقم الهاتف</label>
+          <input type="text" id="settingsPhone" placeholder="+201091940111" dir="ltr" />
+        </div>
+        <button type="submit" class="btn btn-primary">حفظ الإعدادات</button>
+      </form>
+
+      <hr style="margin:24px 0;border:none;border-top:1px solid var(--border);" />
+
+      <div style="max-width:400px;">
+        <h3 style="font-size:15px;margin-bottom:8px;">استيراد بيانات التطبيق</h3>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;line-height:1.6;">
+          استيراد الفئات والعناصر الافتراضية من التطبيق. لن يتم استبدال البيانات الموجودة مسبقاً.
+        </p>
+        <button class="btn btn-primary" id="importAppDataBtn" onclick="importAppData()">
+          استيراد بيانات التطبيق الحالية
+        </button>
+        <p id="importAppDataStatus" style="margin-top:10px;font-size:13px;color:var(--text-muted);"></p>
+      </div>
+    </section>
+
+    <!-- User Sessions Tab -->
+    <section id="tab-sessions" class="tab-content">
+      <div class="section-header">
+        <h2>سجل جلسات المستخدمين</h2>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="sessionSearch" placeholder="بحث برقم الكارت..." class="filter-input" />
+          <select id="sessionFilter" class="filter-select">
+            <option value="">جميع الجلسات</option>
+            <option value="active">نشط الآن</option>
+            <option value="inactive">غير نشط</option>
+          </select>
+          <button class="btn btn-outline" id="refreshSessionsBtn" onclick="loadSessions()">↻ تحديث</button>
+        </div>
+      </div>
+
+      <!-- Session Stats -->
+      <div class="stats-grid" style="margin-bottom:20px;">
+        <div class="stat-card">
+          <span class="stat-num" id="sessionsTotal">0</span>
+          <span class="stat-label">إجمالي المستخدمين</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num" id="sessionsActive">0</span>
+          <span class="stat-label">نشط الآن</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num" id="sessionsWithToken">0</span>
+          <span class="stat-label">لديه إشعارات</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num" id="sessionsInactive">0</span>
+          <span class="stat-label">غير نشط</span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>رقم الكارت</th>
+              <th>الحالة</th>
+              <th>الجهاز</th>
+              <th>آخر دخول</th>
+              <th>آخر خروج</th>
+              <th>رمز الإشعار</th>
+            </tr>
+          </thead>
+          <tbody id="sessionsBody">
+            <tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">جاري التحميل...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Items Modal -->
+    <div class="modal-overlay" id="itemsModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="itemsModalTitle">إدارة العناصر</h3>
+          <button class="modal-close" id="itemsModalClose">&times;</button>
+        </div>
+        <div class="modal-body" id="itemsModalBody"></div>
+      </div>
+    </div>
+
+    <!-- Category Modal -->
+    <div class="modal-overlay" id="catModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="catModalTitle">إضافة/تعديل فئة</h3>
+          <button class="modal-close" id="catModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="catForm">
+            <input type="hidden" id="catId" />
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="catTitle" required />
+            </div>
+            <div class="form-group">
+              <label>الأيقونة</label>
+              <input type="text" id="catIcon" placeholder="wifi, home, bank..." />
+            </div>
+            <div class="form-group">
+              <label>كلمة المرور (اختياري)</label>
+              <input type="text" id="catPassword" />
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="catSortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="catStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Global Button Modal -->
+    <div class="modal-overlay" id="globalModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="globalModalTitle">إضافة/تعديل زر سريع</h3>
+          <button class="modal-close" id="globalModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="globalForm">
+            <input type="hidden" id="globalId" />
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="globalTitle" required />
+            </div>
+            <div class="form-group">
+              <label>الأيقونة</label>
+              <input type="text" id="globalIcon" placeholder="login, card, qr..." />
+            </div>
+            <div class="form-group">
+              <label>الرابط</label>
+              <input type="url" id="globalUrl" />
+            </div>
+            <div class="form-group">
+              <label>الإجراء</label>
+              <select id="globalAction">
+                <option value="webview">WebView</option>
+                <option value="last_card">آخر بطاقة</option>
+                <option value="qr_scanner">QR Scanner</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>كلمة المرور (اختياري)</label>
+              <input type="text" id="globalPassword" />
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="globalSortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="globalStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Item Modal -->
+    <div class="modal-overlay" id="itemModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="itemModalTitle">إضافة/تعديل عنصر</h3>
+          <button class="modal-close" id="itemModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="itemForm">
+            <input type="hidden" id="itemParentCategory" />
+            <input type="hidden" id="itemId" />
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="itemTitle" required />
+            </div>
+            <div class="form-group">
+              <label>الأيقونة</label>
+              <input type="text" id="itemIcon" placeholder="login, card, qr..." />
+            </div>
+            <div class="form-group">
+              <label>الرابط</label>
+              <input type="url" id="itemUrl" />
+            </div>
+            <div class="form-group">
+              <label>الإجراء</label>
+              <select id="itemAction">
+                <option value="webview">WebView</option>
+                <option value="last_card">آخر بطاقة</option>
+                <option value="qr_scanner">QR Scanner</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>كلمة المرور (اختياري)</label>
+              <input type="text" id="itemPassword" />
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="itemSortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="itemStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Announcement Modal -->
+    <div class="modal-overlay" id="announcementModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="announcementModalTitle">إضافة/تعديل إعلان</h3>
+          <button class="modal-close" id="announcementModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="announcementForm">
+            <input type="hidden" id="announcementId" />
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="announcementTitle" required />
+            </div>
+            <div class="form-group">
+              <label>النص المختصر (للبانر)</label>
+              <input type="text" id="announcementShortText" />
+            </div>
+            <div class="form-group">
+              <label>الوصف الكامل</label>
+              <textarea id="announcementDescription" rows="4" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;"></textarea>
+            </div>
+            <div class="form-group">
+              <label>النوع</label>
+              <select id="announcementType">
+                <option value="promotion">عرض</option>
+                <option value="maintenance">صيانة</option>
+                <option value="warning">تنبيه</option>
+                <option value="news">أخبار</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>رابط الصورة</label>
+              <input type="url" id="announcementImageUrl" placeholder="https://..." />
+            </div>
+            <div class="form-group">
+              <label>الرابط الخارجي</label>
+              <input type="url" id="announcementUrl" placeholder="https://..." />
+            </div>
+            <div class="form-group">
+              <label>رقم واتساب</label>
+              <input type="text" id="announcementWhatsapp" placeholder="+201091940111" dir="ltr" />
+            </div>
+            <div class="form-group">
+              <label>رقم الهاتف</label>
+              <input type="text" id="announcementPhone" placeholder="+201091940111" dir="ltr" />
+            </div>
+            <div class="form-group">
+              <label>الأولوية</label>
+              <input type="number" id="announcementPriority" value="0" />
+            </div>
+            <div class="form-group">
+              <label>تاريخ الانتهاء (اختياري)</label>
+              <input type="datetime-local" id="announcementExpiresAt" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="announcementStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;flex-direction:row-reverse;align-items:center;gap:8px;">
+              <input type="checkbox" id="announcementSendNotification" style="width:auto;" />
+              <label for="announcementSendNotification" style="margin:0;">إرسال إشعار push</label>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
