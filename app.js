@@ -565,6 +565,70 @@ $("settingsForm").addEventListener("submit", async (e) => {
 });
 
 // ===== Notifications — Simple Send =====
+function soundForToken(tokenDoc) {
+  const selected = tokenDoc.selectedSound || "default";
+  if (selected === "sound1") return { sound: "sound1.wav", channelId: "sound-preset-1" };
+  if (selected === "sound2") return { sound: "sound2.wav", channelId: "sound-preset-2" };
+  if (selected === "sound3") return { sound: "sound3.wav", channelId: "sound-preset-3" };
+  if (selected === "sound4") return { sound: "sound4.wav", channelId: "sound-preset-4" };
+  return { sound: "notification.wav", channelId: "custom-sound" };
+}
+
+async function getRegisteredPushDevices() {
+  const snap = await db.collection("push_tokens").get();
+  const seen = new Set();
+  const devices = [];
+  snap.forEach((doc) => {
+    const data = { id: doc.id, ...doc.data() };
+    if (!data.token || seen.has(data.token)) return;
+    seen.add(data.token);
+    devices.push(data);
+  });
+  return devices;
+}
+
+async function sendExpoPushMessages(devices, notificationId, title, body, link) {
+  let success = 0;
+  let failure = 0;
+  const messages = devices.map((device) => {
+    const soundConfig = soundForToken(device);
+    return {
+      to: device.token,
+      title,
+      body,
+      sound: soundConfig.sound,
+      channelId: soundConfig.channelId,
+      priority: "high",
+      data: {
+        id: notificationId,
+        link: link || "",
+      },
+    };
+  });
+
+  for (let i = 0; i < messages.length; i += 100) {
+    const chunk = messages.slice(i, i + 100);
+    try {
+      const response = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(chunk),
+      });
+      const result = await response.json();
+      const tickets = Array.isArray(result.data) ? result.data : [];
+      tickets.forEach((ticket) => {
+        if (ticket.status === "ok") success++;
+        else failure++;
+      });
+      if (!tickets.length) failure += chunk.length;
+    } catch (err) {
+      failure += chunk.length;
+    }
+  }
+
+  return { success, failure };
+}
+
 $("notifForm").addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -737,14 +801,449 @@ async function loadDeviceStats() {
   }
 }
 
+// ===== Authentication =====
+const ADMIN_CRED_DOC = "admin_credentials";
+let isAuthenticated = false;
+
+function checkAuth() {
+  const session = sessionStorage.getItem("admin_auth");
+  if (session === "true") {
+    isAuthenticated = true;
+    $("loginOverlay").classList.remove("open");
+    $("logoutBtn").style.display = "inline-flex";
+    return true;
+  }
+  isAuthenticated = false;
+  $("loginOverlay").classList.add("open");
+  $("logoutBtn").style.display = "none";
+  return false;
+}
+
+async function verifyCredentials(username, password) {
+  try {
+    const doc = await db.collection("settings").doc(ADMIN_CRED_DOC).get();
+    if (!doc.exists) {
+      // First run: create default credentials
+      const defaultUser = "admin";
+      const defaultPass = "admin123";
+      await db.collection("settings").doc(ADMIN_CRED_DOC).set({
+        username: defaultUser,
+        password: defaultPass,
+        updatedAt: Date.now(),
+      });
+      return username === defaultUser && password === defaultPass;
+    }
+    const data = doc.data();
+    return username === data.username && password === data.password;
+  } catch (err) {
+    console.error("Auth check error:", err);
+    return false;
+  }
+}
+
+async function handleLogin() {
+  const username = $("loginUsername").value.trim();
+  const password = $("loginPassword").value.trim();
+  const errorEl = $("loginError");
+
+  if (!username || !password) {
+    errorEl.textContent = "الرجاء إدخال اسم المستخدم وكلمة المرور";
+    errorEl.style.display = "block";
+    return;
+  }
+
+  const loginBtn = $("loginBtn");
+  loginBtn.disabled = true;
+  loginBtn.textContent = "جاري التحقق...";
+
+  const valid = await verifyCredentials(username, password);
+  if (valid) {
+    sessionStorage.setItem("admin_auth", "true");
+    isAuthenticated = true;
+    $("loginOverlay").classList.remove("open");
+    $("logoutBtn").style.display = "inline-flex";
+    $("loginUsername").value = "";
+    $("loginPassword").value = "";
+    errorEl.style.display = "none";
+  } else {
+    errorEl.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة";
+    errorEl.style.display = "block";
+  }
+
+  loginBtn.disabled = false;
+  loginBtn.textContent = "دخول";
+}
+
+function handleLogout() {
+  sessionStorage.removeItem("admin_auth");
+  isAuthenticated = false;
+  $("logoutBtn").style.display = "none";
+  $("loginOverlay").classList.add("open");
+  $("loginUsername").value = "";
+  $("loginPassword").value = "";
+  $("loginError").style.display = "none";
+}
+
+async function loadAdminCredentials() {
+  try {
+    const doc = await db.collection("settings").doc(ADMIN_CRED_DOC).get();
+    if (doc.exists) {
+      $("adminUsername").value = doc.data().username || "admin";
+      $("adminPassword").value = "";
+    } else {
+      $("adminUsername").value = "admin";
+      $("adminPassword").value = "";
+    }
+  } catch {}
+}
+
+async function saveAdminCredentials() {
+  const username = $("adminUsername").value.trim();
+  const password = $("adminPassword").value.trim();
+  const statusEl = $("adminCredStatus");
+
+  if (!username || !password) {
+    statusEl.textContent = "الرجاء إدخال اسم المستخدم وكلمة المرور";
+    statusEl.style.color = "var(--danger)";
+    return;
+  }
+
+  try {
+    await db.collection("settings").doc(ADMIN_CRED_DOC).set({
+      username,
+      password,
+      updatedAt: Date.now(),
+    });
+    statusEl.textContent = "✅ تم حفظ بيانات الدخول بنجاح";
+    statusEl.style.color = "var(--success)";
+    $("adminPassword").value = "";
+  } catch (err) {
+    statusEl.textContent = "❌ خطأ: " + err.message;
+    statusEl.style.color = "var(--danger)";
+  }
+}
+
+// Allow pressing Enter in login form
+$("loginPassword").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") handleLogin();
+});
+$("loginUsername").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") handleLogin();
+});
+
+// ===== Prices Management =====
+const CLOUDINARY_CLOUD = "dnezvioxe";
+const CLOUDINARY_UPLOAD_PRESET = "samara_uploads";
+const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+let pricesCache = [];
+let editingPriceId = null;
+let priceUploadXhr = null;
+
+async function loadPrices() {
+  try {
+    const snap = await db.collection("prices").orderBy("sortOrder", "asc").get();
+    pricesCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderPrices();
+  } catch (err) {
+    console.error("loadPrices error:", err);
+    pricesCache = [];
+  }
+}
+
+function renderPrices() {
+  const body = $("pricesBody");
+  if (!pricesCache.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px;">لا توجد أسعار بعد</td></tr>';
+    return;
+  }
+  body.innerHTML = pricesCache.map((p) => `
+    <tr>
+      <td>${p.sortOrder ?? "-"}</td>
+      <td>${p.imageUrl ? `<img src="${p.imageUrl}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;" />` : "-"}</td>
+      <td><strong>${p.title}</strong></td>
+      <td style="color:var(--primary);font-weight:700;">${p.price}</td>
+      <td style="font-size:12px;color:var(--text-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.description || "-"}</td>
+      <td>
+        <div class="action-btns">
+          <button class="btn btn-sm btn-primary" onclick="editPrice('${p.id}')">تعديل</button>
+          <button class="btn btn-sm btn-danger" onclick="deletePrice('${p.id}')">حذف</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+$("addPriceBtn").addEventListener("click", () => openPriceForm(null));
+$("priceCancelBtn").addEventListener("click", cancelPriceEdit);
+
+function openPriceForm(item) {
+  editingPriceId = item ? item.id : null;
+  $("priceId").value = item ? item.id : "";
+  $("priceTitle").value = item ? item.title : "";
+  $("priceAmount").value = item ? item.price : "";
+  $("priceDescription").value = item ? item.description || "" : "";
+  $("priceSortOrder").value = item ? item.sortOrder ?? 0 : 0;
+  $("priceImagePreview").style.display = item && item.imageUrl ? "block" : "none";
+  if (item && item.imageUrl) {
+    $("priceImagePreviewImg").src = item.imageUrl;
+  }
+  $("priceImageInput").value = "";
+  $("priceCancelBtn").style.display = editingPriceId ? "inline-flex" : "none";
+  hideUploadProgress();
+  $("priceImageValidation").style.display = "none";
+  updatePricePreview();
+}
+
+$("priceTitle").addEventListener("input", updatePricePreview);
+$("priceAmount").addEventListener("input", updatePricePreview);
+$("priceDescription").addEventListener("input", updatePricePreview);
+
+function updatePricePreview() {
+  const title = $("priceTitle").value.trim();
+  const price = $("priceAmount").value.trim();
+  const desc = $("priceDescription").value.trim();
+  const previewImg = $("priceImagePreviewImg").src;
+  let html = "";
+  if (previewImg && $("priceImagePreview").style.display !== "none") {
+    html += `<img src="${previewImg}" style="width:100%;max-width:200px;border-radius:12px;margin-bottom:12px;" />`;
+  }
+  html += title ? `<h3 style="font-size:18px;margin-bottom:4px;">${title}</h3>` : "";
+  html += price ? `<p style="font-size:22px;font-weight:700;color:var(--primary);margin-bottom:8px;">${price}</p>` : "";
+  html += desc ? `<p style="font-size:13px;color:var(--text-muted);line-height:1.6;">${desc}</p>` : "";
+  $("pricePreview").innerHTML = html || '<span style="color:var(--text-muted);">سيتم عرض المعاينة هنا بعد إدخال البيانات.</span>';
+}
+
+function cancelPriceEdit() {
+  if (priceUploadXhr) {
+    priceUploadXhr.abort();
+    priceUploadXhr = null;
+  }
+  editingPriceId = null;
+  $("priceForm").reset();
+  $("priceImagePreview").style.display = "none";
+  $("priceCancelBtn").style.display = "none";
+  hideUploadProgress();
+  $("priceImageValidation").style.display = "none";
+  $("pricePreview").innerHTML = '<span style="color:var(--text-muted);">سيتم عرض المعاينة هنا بعد إدخال البيانات.</span>';
+}
+
+function hideUploadProgress() {
+  $("priceUploadProgress").style.display = "none";
+  $("priceUploadProgressBar").style.width = "0%";
+  $("priceUploadProgressText").textContent = "0%";
+}
+
+function showUploadProgress(percent) {
+  $("priceUploadProgress").style.display = "block";
+  $("priceUploadProgressBar").style.width = percent + "%";
+  $("priceUploadProgressText").textContent = percent + "%";
+}
+
+$("priceImageInput").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  // Validate file type
+  const valEl = $("priceImageValidation");
+  if (!ALLOWED_TYPES.includes(file.type)) {
+    valEl.textContent = "نوع الملف غير مدعوم. الأنواع المسموحة: JPG, PNG, WEBP";
+    valEl.style.display = "block";
+    $("priceImageInput").value = "";
+    return;
+  }
+  // Validate file size
+  if (file.size > MAX_FILE_SIZE) {
+    valEl.textContent = "حجم الملف كبير جدًا. الحد الأقصى 5 ميجابايت";
+    valEl.style.display = "block";
+    $("priceImageInput").value = "";
+    return;
+  }
+  valEl.style.display = "none";
+
+  // Show local preview
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    $("priceImagePreviewImg").src = ev.target.result;
+    $("priceImagePreview").style.display = "block";
+    updatePricePreview();
+  };
+  reader.readAsDataURL(file);
+});
+
+async function uploadToCloudinary(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+
+    const xhr = new XMLHttpRequest();
+    priceUploadXhr = xhr;
+
+    xhr.open("POST", `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, true);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        onProgress(pct);
+      }
+    };
+
+    xhr.onload = () => {
+      priceUploadXhr = null;
+      if (xhr.status === 200) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data.secure_url);
+        } catch (err) {
+          reject(new Error("فشل تحليل رد الخادم"));
+        }
+      } else {
+        try {
+          const errData = JSON.parse(xhr.responseText);
+          reject(new Error(errData.error?.message || "فشل رفع الصورة"));
+        } catch {
+          reject(new Error("فشل رفع الصورة (كود: " + xhr.status + ")"));
+        }
+      }
+    };
+
+    xhr.onerror = () => {
+      priceUploadXhr = null;
+      reject(new Error("خطأ في الاتصال بالخادم"));
+    };
+
+    xhr.onabort = () => {
+      priceUploadXhr = null;
+      reject(new Error("تم إلغاء الرفع"));
+    };
+
+    xhr.send(formData);
+  });
+}
+
+async function deleteCloudinaryImage(publicId) {
+  // Try callable function; if unavailable (Spark plan / not deployed), silently skip
+  try {
+    const deleteFn = firebase.functions().httpsCallable("deleteCloudinaryImage");
+    await deleteFn({ publicId });
+  } catch (err) {
+    // Not deployed or no Blaze plan — image stays orphaned on Cloudinary, which is harmless
+    console.warn("Cloudinary delete skipped (function not deployed):", err.message);
+  }
+}
+
+function extractPublicId(imageUrl) {
+  // Cloudinary secure_url format:
+  // https://res.cloudinary.com/{cloud}/image/upload/v1234567/{public_id}.{ext}
+  try {
+    const parts = imageUrl.split("/");
+    const last = parts[parts.length - 1]; // e.g., abc123.jpg
+    const secondLast = parts[parts.length - 2]; // e.g., v1234567
+    if (secondLast && secondLast.startsWith("v") && !isNaN(parseInt(secondLast.substring(1)))) {
+      // Versioned URL: /v1234567/abc123.jpg
+      const dotIdx = last.lastIndexOf(".");
+      return dotIdx > -1 ? last.substring(0, dotIdx) : last;
+    }
+    // Non-versioned URL: /abc123.jpg
+    const dotIdx = last.lastIndexOf(".");
+    return dotIdx > -1 ? last.substring(0, dotIdx) : last;
+  } catch {
+    return null;
+  }
+}
+
+$("priceForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const title = $("priceTitle").value.trim();
+  const price = $("priceAmount").value.trim();
+  const description = $("priceDescription").value.trim();
+  const sortOrder = parseInt($("priceSortOrder").value) || 0;
+
+  if (!title || !price) {
+    alert("العنوان والسعر مطلوبان");
+    return;
+  }
+
+  const saveBtn = e.target.querySelector('button[type="submit"]');
+  saveBtn.disabled = true;
+  saveBtn.textContent = "جاري الحفظ...";
+
+  try {
+    let imageUrl = null;
+    const fileInput = $("priceImageInput");
+
+    if (fileInput.files && fileInput.files[0]) {
+      showUploadProgress(0);
+      imageUrl = await uploadToCloudinary(fileInput.files[0], showUploadProgress);
+    } else if (editingPriceId) {
+      const existing = pricesCache.find((p) => p.id === editingPriceId);
+      if (existing && existing.imageUrl) imageUrl = existing.imageUrl;
+    }
+
+    const data = { title, price, description: description || null, imageUrl, sortOrder, updatedAt: Date.now() };
+
+    if (editingPriceId) {
+      await db.collection("prices").doc(editingPriceId).update(data);
+    } else {
+      data.createdAt = Date.now();
+      await db.collection("prices").add(data);
+    }
+
+    cancelPriceEdit();
+    await loadPrices();
+    alert("تم حفظ السعر بنجاح");
+  } catch (err) {
+    hideUploadProgress();
+    alert("خطأ: " + err.message);
+  }
+
+  saveBtn.disabled = false;
+  saveBtn.textContent = "حفظ";
+});
+
+window.editPrice = (id) => {
+  const item = pricesCache.find((p) => p.id === id);
+  if (item) openPriceForm(item);
+};
+
+window.deletePrice = async (id) => {
+  if (!confirm("هل تريد حذف هذا السعر؟")) return;
+  try {
+    const item = pricesCache.find((p) => p.id === id);
+
+    // Delete image from Cloudinary if present
+    if (item && item.imageUrl) {
+      const publicId = extractPublicId(item.imageUrl);
+      if (publicId) {
+        await deleteCloudinaryImage(publicId);
+      }
+    }
+
+    await db.collection("prices").doc(id).delete();
+    await loadPrices();
+  } catch (err) {
+    alert("خطأ في الحذف: " + err.message);
+  }
+};
+
 // ===== Init =====
 async function init() {
+  await loadAdminCredentials();
+
+  if (!checkAuth()) {
+    // Not authenticated — only show login, don't load data
+    return;
+  }
+
   await Promise.all([
     loadCategories(),
     loadGlobalButtons(),
     loadSettings(),
     loadNotifications().then(calculateStats),
     loadDeviceStats(),
+    loadPrices(),
   ]);
 }
 
