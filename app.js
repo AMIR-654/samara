@@ -446,6 +446,7 @@ async function loadRegions() {
     regionsCache.push({ id: doc.id, ...data, salePoints: sortByOrder(points) });
   }
   renderRegions();
+  if (currentSalePointRegion) renderSalePointsCards();
 }
 
 function renderRegions() {
@@ -461,7 +462,7 @@ function renderRegions() {
       <td><strong>${r.name}</strong></td>
       <td>${statusBadge(r.status)}</td>
       <td>
-        <button class="btn btn-sm btn-outline" onclick="openSalePointsModal('${r.id}','${r.name}')">
+        <button class="btn btn-sm btn-outline" onclick="openRegionSalePoints('${r.id}','${r.name}')">
           إدارة نقاط البيع (${(r.salePoints||[]).length})
         </button>
       </td>
@@ -525,58 +526,83 @@ window.deleteRegion = async (id) => {
   }
 };
 
-// ===== Sale Points =====
-function openSalePointsModal(regionId, regionName) {
+// ===== Sale Points (Drill-down Split View) =====
+function openRegionSalePoints(regionId, regionName) {
   currentSalePointRegion = regionId;
-  renderSalePoints();
-  const titleEl = document.getElementById("salePointsModalTitle");
-  if (titleEl) titleEl.textContent = "نقاط البيع: " + regionName;
-  const modalEl = document.getElementById("salePointsModal");
-  if (modalEl) modalEl.classList.add("open");
+  document.getElementById("regionsListView").style.display = "none";
+  document.getElementById("salePointsView").style.display = "block";
+  document.getElementById("spvRegionName").textContent = regionName;
+  resetSalePointForm();
+  renderSalePointsCards();
 }
 
-function renderSalePoints() {
+window.backToRegions = () => {
+  currentSalePointRegion = null;
+  document.getElementById("salePointsView").style.display = "none";
+  document.getElementById("regionsListView").style.display = "block";
+};
+
+function resetSalePointForm() {
+  document.getElementById("spvFormTitle").textContent = "+ إضافة نقطة بيع";
+  document.getElementById("salePointId").value = "";
+  document.getElementById("salePointName").value = "";
+  document.getElementById("salePointPhone").value = "";
+  document.getElementById("salePointWhatsapp").value = "";
+  document.getElementById("salePointAddress").value = "";
+  document.getElementById("salePointMapsUrl").value = "";
+  document.getElementById("salePointNotes").value = "";
+  document.getElementById("salePointSortOrder").value = 0;
+  document.getElementById("salePointStatus").value = "active";
+  document.getElementById("salePointCancelBtn").style.display = "none";
+}
+
+window.cancelSalePointEdit = () => {
+  resetSalePointForm();
+  renderSalePointsCards();
+};
+
+function renderSalePointsCards() {
   const region = regionsCache.find((r) => r.id === currentSalePointRegion);
   const pts = region ? sortByOrder(region.salePoints) : [];
-  let html = "";
+  document.getElementById("spvCount").textContent = pts.length;
+  const listEl = document.getElementById("salePointsCardsList");
   if (!pts.length) {
-    html = '<p style="color:var(--text-muted);text-align:center;padding:16px;">لا توجد نقاط بيع</p>';
-  } else {
-    html = pts.map((p, i) => `
-      <div class="item-entry">
-        <div class="item-info">
-          <strong>${p.name}</strong>
-          ${p.phone ? '<br><small style="color:var(--text-muted);direction:ltr;display:block;">📞 ' + p.phone + '</small>' : ""}
-          ${p.whatsapp ? '<br><small style="color:var(--text-muted);direction:ltr;display:block;">💬 ' + p.whatsapp + '</small>' : ""}
-          ${p.address ? '<br><small style="color:var(--text-muted);display:block;">📍 ' + p.address + '</small>' : ""}
-        </div>
-        <div class="action-btns">
-          <button class="btn btn-sm btn-primary" onclick="openSalePointModal('${p.id}')">تعديل</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteSalePoint('${p.id}')">حذف</button>
-        </div>
-      </div>
-    `).join("");
+    listEl.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px;">لا توجد نقاط بيع في هذه المنطقة بعد</p>';
+    return;
   }
-  html += '<div class="add-item-bar"><input type="text" id="quickSalePointName" placeholder="اسم نقطة البيع الجديدة" /><button class="btn btn-primary" onclick="quickAddSalePoint()">إضافة</button></div>';
-  document.getElementById("salePointsModalBody").innerHTML = html;
+  const activeId = document.getElementById("salePointId").value;
+  listEl.innerHTML = pts.map((p) => `
+    <div class="template-card salepoint-card ${p.id === activeId ? "selected" : ""}" onclick="editSalePointInline('${p.id}')">
+      <div class="template-info">
+        <span class="template-title">${p.name} ${statusBadge(p.status)}</span>
+        <span class="template-body">
+          ${p.phone ? "📞 " + p.phone + "  " : ""}${p.whatsapp ? "💬 " + p.whatsapp + "  " : ""}${p.address ? "📍 " + p.address : ""}
+        </span>
+      </div>
+      <div class="action-btns" onclick="event.stopPropagation()">
+        <button class="btn btn-sm btn-outline" onclick="editSalePointInline('${p.id}')">تعديل</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteSalePoint('${p.id}')">حذف</button>
+      </div>
+    </div>
+  `).join("");
 }
 
-window.quickAddSalePoint = async () => {
-  const name = document.getElementById("quickSalePointName").value.trim();
-  if (!name || !currentSalePointRegion) return;
-  try {
-    await db.collection("sale_regions").doc(currentSalePointRegion).collection("sale_points").add({
-      name,
-      phone: "", whatsapp: "", address: "", mapsUrl: "", notes: "",
-      sortOrder: Date.now(),
-      status: "active",
-    });
-    document.getElementById("quickSalePointName").value = "";
-    await loadRegions();
-    renderSalePoints();
-  } catch (err) {
-    alert("خطأ: " + err.message);
-  }
+window.editSalePointInline = (pointId) => {
+  const region = regionsCache.find((r) => r.id === currentSalePointRegion);
+  const point = region ? region.salePoints.find((p) => p.id === pointId) : null;
+  if (!point) return;
+  document.getElementById("spvFormTitle").textContent = "تعديل: " + point.name;
+  document.getElementById("salePointId").value = pointId;
+  document.getElementById("salePointName").value = point.name || "";
+  document.getElementById("salePointPhone").value = point.phone || "";
+  document.getElementById("salePointWhatsapp").value = point.whatsapp || "";
+  document.getElementById("salePointAddress").value = point.address || "";
+  document.getElementById("salePointMapsUrl").value = point.mapsUrl || "";
+  document.getElementById("salePointNotes").value = point.notes || "";
+  document.getElementById("salePointSortOrder").value = point.sortOrder ?? 0;
+  document.getElementById("salePointStatus").value = point.status || "active";
+  document.getElementById("salePointCancelBtn").style.display = "inline-flex";
+  renderSalePointsCards();
 };
 
 window.deleteSalePoint = async (pointId) => {
@@ -584,27 +610,12 @@ window.deleteSalePoint = async (pointId) => {
   try {
     await db.collection("sale_regions").doc(currentSalePointRegion).collection("sale_points").doc(pointId).delete();
     await loadRegions();
-    renderSalePoints();
+    if (document.getElementById("salePointId").value === pointId) resetSalePointForm();
+    renderSalePointsCards();
   } catch (err) {
     alert("خطأ: " + err.message);
   }
 };
-
-function openSalePointModal(pointId) {
-  const region = regionsCache.find((r) => r.id === currentSalePointRegion);
-  const point = region ? region.salePoints.find((p) => p.id === pointId) : null;
-  document.getElementById("salePointModalTitle").textContent = point ? "تعديل نقطة بيع" : "إضافة نقطة بيع";
-  document.getElementById("salePointId").value = point ? pointId : "";
-  document.getElementById("salePointName").value = point ? point.name : "";
-  document.getElementById("salePointPhone").value = point ? point.phone || "" : "";
-  document.getElementById("salePointWhatsapp").value = point ? point.whatsapp || "" : "";
-  document.getElementById("salePointAddress").value = point ? point.address || "" : "";
-  document.getElementById("salePointMapsUrl").value = point ? point.mapsUrl || "" : "";
-  document.getElementById("salePointNotes").value = point ? point.notes || "" : "";
-  document.getElementById("salePointSortOrder").value = point ? point.sortOrder ?? 0 : 0;
-  document.getElementById("salePointStatus").value = point ? point.status || "active" : "active";
-  document.getElementById("salePointModal").classList.add("open");
-}
 
 document.getElementById("salePointForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -626,9 +637,9 @@ document.getElementById("salePointForm").addEventListener("submit", async (e) =>
     } else {
       await ref.add(data);
     }
-    document.getElementById("salePointModal").classList.remove("open");
     await loadRegions();
-    renderSalePoints();
+    resetSalePointForm();
+    renderSalePointsCards();
   } catch (err) {
     alert("خطأ: " + err.message);
   }

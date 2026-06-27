@@ -103,24 +103,90 @@
 
     <!-- Sale Regions Tab -->
     <section id="tab-regions" class="tab-content">
-      <div class="section-header">
-        <h2>إدارة مناطق البيع</h2>
-        <button class="btn btn-primary" onclick="openRegionModal(null)">+ إضافة منطقة</button>
+
+      <!-- Regions List View -->
+      <div id="regionsListView">
+        <div class="section-header">
+          <h2>إدارة مناطق البيع</h2>
+          <button class="btn btn-primary" onclick="openRegionModal(null)">+ إضافة منطقة</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>الترتيب</th>
+                <th>الاسم</th>
+                <th>الحالة</th>
+                <th>نقاط البيع</th>
+                <th>الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="regionsBody"></tbody>
+          </table>
+        </div>
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>الترتيب</th>
-              <th>الاسم</th>
-              <th>الحالة</th>
-              <th>نقاط البيع</th>
-              <th>الإجراءات</th>
-            </tr>
-          </thead>
-          <tbody id="regionsBody"></tbody>
-        </table>
+
+      <!-- Sale Points View (drill-down) -->
+      <div id="salePointsView" style="display:none;">
+        <div class="breadcrumb-bar">
+          <button class="btn btn-sm btn-outline" onclick="backToRegions()">→ رجوع للمناطق</button>
+          <span class="breadcrumb-trail">مناطق البيع <span class="bc-sep">/</span> <strong id="spvRegionName"></strong></span>
+        </div>
+
+        <div class="notif-grid">
+          <!-- Form Panel -->
+          <div class="notif-form-panel">
+            <h3 id="spvFormTitle">+ إضافة نقطة بيع</h3>
+            <form id="salePointForm">
+              <input type="hidden" id="salePointId" />
+              <div class="form-group">
+                <label>الاسم <span class="required">*</span></label>
+                <input type="text" id="salePointName" required />
+              </div>
+              <div class="form-group">
+                <label>رقم الهاتف</label>
+                <input type="text" id="salePointPhone" dir="ltr" />
+              </div>
+              <div class="form-group">
+                <label>رقم واتساب</label>
+                <input type="text" id="salePointWhatsapp" dir="ltr" />
+              </div>
+              <div class="form-group">
+                <label>العنوان</label>
+                <input type="text" id="salePointAddress" />
+              </div>
+              <div class="form-group">
+                <label>رابط خرائط Google</label>
+                <input type="url" id="salePointMapsUrl" dir="ltr" placeholder="https://maps.google.com/?q=..." />
+              </div>
+              <div class="form-group">
+                <label>ملاحظات (اختياري)</label>
+                <textarea id="salePointNotes" rows="2"></textarea>
+              </div>
+              <div class="form-group">
+                <label>ترتيب الفرز</label>
+                <input type="number" id="salePointSortOrder" value="0" />
+              </div>
+              <div class="form-group">
+                <label>الحالة</label>
+                <select id="salePointStatus">
+                  <option value="active">نشط</option>
+                  <option value="disabled">معطل</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary">حفظ</button>
+              <button type="button" class="btn btn-outline" id="salePointCancelBtn" style="display:none;margin-right:8px;" onclick="cancelSalePointEdit()">إلغاء</button>
+            </form>
+          </div>
+
+          <!-- Cards List Panel -->
+          <div class="notif-templates-panel">
+            <h3>نقاط البيع (<span id="spvCount">0</span>)</h3>
+            <div id="salePointsCardsList" class="templates-list"></div>
+          </div>
+        </div>
       </div>
+
     </section>
 
     <!-- Prices Tab -->
@@ -573,68 +639,7 @@
       </div>
     </div>
 
-    <!-- Sale Points List Modal (opens from "Manage Sale Points" button) -->
-    <div class="modal-overlay" id="salePointsModal">
-      <div class="modal">
-        <div class="modal-header">
-          <h3 id="salePointsModalTitle">نقاط البيع</h3>
-          <button class="modal-close" onclick="document.getElementById('salePointsModal').classList.remove('open'); currentSalePointRegion=null;">&times;</button>
-        </div>
-        <div class="modal-body" id="salePointsModalBody"></div>
-      </div>
-    </div>
 
-    <!-- Sale Point Edit Modal -->
-    <div class="modal-overlay" id="salePointModal">
-      <div class="modal" style="max-width:500px;">
-        <div class="modal-header">
-          <h3 id="salePointModalTitle">إضافة/تعديل نقطة بيع</h3>
-          <button class="modal-close" onclick="document.getElementById('salePointModal').classList.remove('open'); currentSalePointRegion=null;">&times;</button>
-        </div>
-        <div class="modal-body">
-          <form id="salePointForm">
-            <input type="hidden" id="salePointId" />
-            <div class="form-group">
-              <label>الاسم <span class="required">*</span></label>
-              <input type="text" id="salePointName" required />
-            </div>
-            <div class="form-group">
-              <label>رقم الهاتف</label>
-              <input type="text" id="salePointPhone" dir="ltr" />
-            </div>
-            <div class="form-group">
-              <label>رقم واتساب</label>
-              <input type="text" id="salePointWhatsapp" dir="ltr" />
-            </div>
-            <div class="form-group">
-              <label>العنوان</label>
-              <input type="text" id="salePointAddress" />
-            </div>
-            <div class="form-group">
-              <label>رابط خرائط Google</label>
-              <input type="url" id="salePointMapsUrl" dir="ltr" placeholder="https://maps.google.com/?q=..." />
-            </div>
-            <div class="form-group">
-              <label>ملاحظات (اختياري)</label>
-              <textarea id="salePointNotes" rows="2"></textarea>
-            </div>
-            <div class="form-group">
-              <label>ترتيب الفرز</label>
-              <input type="number" id="salePointSortOrder" value="0" />
-            </div>
-            <div class="form-group">
-              <label>الحالة</label>
-              <select id="salePointStatus">
-                <option value="active">نشط</option>
-                <option value="disabled">معطل</option>
-              </select>
-            </div>
-            <button type="submit" class="btn btn-primary">حفظ</button>
-          </form>
-        </div>
-      </div>
-    </div>
-  </main>
 
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js"></script>

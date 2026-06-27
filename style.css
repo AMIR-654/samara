@@ -648,6 +648,53 @@ tr:hover td { background: var(--surface-hover); }
   letter-spacing: 0.3px;
 }
 
+/* ===== Breadcrumb Drill-down (Sale Points) ===== */
+.breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.breadcrumb-trail {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.breadcrumb-trail strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.breadcrumb-trail .bc-sep {
+  margin: 0 6px;
+  color: var(--border);
+}
+
+.salepoint-card {
+  cursor: pointer;
+  align-items: flex-start;
+}
+
+.salepoint-card .template-info {
+  gap: 4px;
+}
+
+.salepoint-card .template-body {
+  white-space: normal;
+  max-width: none;
+  direction: ltr;
+  text-align: right;
+  unicode-bidi: plaintext;
+}
+
+.salepoint-card.selected {
+  border-color: var(--primary);
+  background: var(--surface-hover);
+  box-shadow: 0 0 0 2px rgba(14,165,233,0.15);
+}
+
 /* Status badge additions */
 .status-badge.delivered {
   background: #dcfce7;
