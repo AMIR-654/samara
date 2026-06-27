@@ -1462,6 +1462,7 @@ async function init() {
     loadNotifications().then(calculateStats),
     loadDeviceStats(),
     loadPrices(),
+    loadRegions(),
   ]);
 }
 
