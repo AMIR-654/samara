@@ -47,6 +47,7 @@
     <nav class="tabs">
       <button class="tab active" data-tab="categories">الفئات</button>
       <button class="tab" data-tab="global">الأزرار السريعة</button>
+      <button class="tab" data-tab="regions">مناطق البيع</button>
       <button class="tab" data-tab="prices">قائمة الأسعار</button>
       <button class="tab" data-tab="notifications">الإشعارات</button>
       <button class="tab" data-tab="settings">الإعدادات</button>
@@ -96,6 +97,28 @@
             </tr>
           </thead>
           <tbody id="globalButtonsBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Sale Regions Tab -->
+    <section id="tab-regions" class="tab-content">
+      <div class="section-header">
+        <h2>إدارة مناطق البيع</h2>
+        <button class="btn btn-primary" onclick="openRegionModal(null)">+ إضافة منطقة</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الترتيب</th>
+              <th>الاسم</th>
+              <th>الحالة</th>
+              <th>نقاط البيع</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="regionsBody"></tbody>
         </table>
       </div>
     </section>
@@ -312,6 +335,18 @@
           <label>رقم الهاتف</label>
           <input type="text" id="settingsPhone" placeholder="+201091940111" dir="ltr" />
         </div>
+        <div class="form-group">
+          <label>رابط فيسبوك</label>
+          <input type="url" id="settingsFacebook" placeholder="https://facebook.com/..." dir="ltr" />
+        </div>
+        <div class="form-group">
+          <label>رابط تيليجرام</label>
+          <input type="url" id="settingsTelegram" placeholder="https://t.me/..." dir="ltr" />
+        </div>
+        <div class="form-group">
+          <label>رابط الموقع (خرائط)</label>
+          <input type="url" id="settingsLocation" placeholder="https://maps.google.com/?q=..." dir="ltr" />
+        </div>
         <button type="submit" class="btn btn-primary">حفظ الإعدادات</button>
       </form>
 
@@ -497,6 +532,88 @@
             <div class="form-group">
               <label>الحالة</label>
               <select id="itemStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Region Modal -->
+    <div class="modal-overlay" id="regionModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="regionModalTitle">إضافة/تعديل منطقة بيع</h3>
+          <button class="modal-close" onclick="document.getElementById('regionModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="regionForm">
+            <input type="hidden" id="regionId" />
+            <div class="form-group">
+              <label>الاسم</label>
+              <input type="text" id="regionName" required />
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="regionSortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="regionStatus">
+                <option value="active">نشط</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sale Point Modal -->
+    <div class="modal-overlay" id="salePointModal">
+      <div class="modal" style="max-width:500px;">
+        <div class="modal-header">
+          <h3 id="salePointModalTitle">إضافة/تعديل نقطة بيع</h3>
+          <button class="modal-close" onclick="document.getElementById('salePointModal').classList.remove('open'); currentSalePointRegion=null;">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="salePointForm">
+            <input type="hidden" id="salePointId" />
+            <div class="form-group">
+              <label>الاسم <span class="required">*</span></label>
+              <input type="text" id="salePointName" required />
+            </div>
+            <div class="form-group">
+              <label>رقم الهاتف</label>
+              <input type="text" id="salePointPhone" dir="ltr" />
+            </div>
+            <div class="form-group">
+              <label>رقم واتساب</label>
+              <input type="text" id="salePointWhatsapp" dir="ltr" />
+            </div>
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="salePointAddress" />
+            </div>
+            <div class="form-group">
+              <label>رابط خرائط Google</label>
+              <input type="url" id="salePointMapsUrl" dir="ltr" placeholder="https://maps.google.com/?q=..." />
+            </div>
+            <div class="form-group">
+              <label>ملاحظات (اختياري)</label>
+              <textarea id="salePointNotes" rows="2"></textarea>
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="salePointSortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="salePointStatus">
                 <option value="active">نشط</option>
                 <option value="disabled">معطل</option>
               </select>
