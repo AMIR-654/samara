@@ -462,7 +462,7 @@ function renderRegions() {
       <td>${statusBadge(r.status)}</td>
       <td>
         <button class="btn btn-sm btn-outline" onclick="openSalePointsModal('${r.id}','${r.name}')">
-          ${(r.salePoints||[]).length} نقاط
+          إدارة نقاط البيع (${(r.salePoints||[]).length})
         </button>
       </td>
       <td>
@@ -528,9 +528,11 @@ window.deleteRegion = async (id) => {
 // ===== Sale Points =====
 function openSalePointsModal(regionId, regionName) {
   currentSalePointRegion = regionId;
-  document.getElementById("salePointsModalTitle").textContent = "نقاط البيع: " + regionName;
   renderSalePoints();
-  document.getElementById("salePointsModal").classList.add("open");
+  const titleEl = document.getElementById("salePointsModalTitle");
+  if (titleEl) titleEl.textContent = "نقاط البيع: " + regionName;
+  const modalEl = document.getElementById("salePointsModal");
+  if (modalEl) modalEl.classList.add("open");
 }
 
 function renderSalePoints() {
@@ -556,15 +558,7 @@ function renderSalePoints() {
     `).join("");
   }
   html += '<div class="add-item-bar"><input type="text" id="quickSalePointName" placeholder="اسم نقطة البيع الجديدة" /><button class="btn btn-primary" onclick="quickAddSalePoint()">إضافة</button></div>';
-  const existing = document.getElementById("salePointsModalBody");
-  if (existing) existing.innerHTML = html;
-  else {
-    const overlay = document.createElement("div");
-    overlay.className = "modal-overlay";
-    overlay.id = "salePointsModal";
-    overlay.innerHTML = '<div class="modal"><div class="modal-header"><h3 id="salePointsModalTitle">نقاط البيع</h3><button class="modal-close" onclick="document.getElementById(\'salePointsModal\').classList.remove(\'open\');currentSalePointRegion=null;">&times;</button></div><div class="modal-body" id="salePointsModalBody">' + html + '</div></div>';
-    document.body.appendChild(overlay);
-  }
+  document.getElementById("salePointsModalBody").innerHTML = html;
 }
 
 window.quickAddSalePoint = async () => {

@@ -573,7 +573,18 @@
       </div>
     </div>
 
-    <!-- Sale Point Modal -->
+    <!-- Sale Points List Modal (opens from "Manage Sale Points" button) -->
+    <div class="modal-overlay" id="salePointsModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="salePointsModalTitle">نقاط البيع</h3>
+          <button class="modal-close" onclick="document.getElementById('salePointsModal').classList.remove('open'); currentSalePointRegion=null;">&times;</button>
+        </div>
+        <div class="modal-body" id="salePointsModalBody"></div>
+      </div>
+    </div>
+
+    <!-- Sale Point Edit Modal -->
     <div class="modal-overlay" id="salePointModal">
       <div class="modal" style="max-width:500px;">
         <div class="modal-header">
