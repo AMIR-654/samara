@@ -1451,6 +1451,178 @@ window.deletePrice = async (id) => {
   }
 };
 
+// ===== Update Management =====
+let updateInfoData = null;
+
+// Toggle switch label
+document.getElementById("updateForce").addEventListener("change", function () {
+  document.getElementById("updateForceLabel").textContent = this.checked ? "إجباري" : "اختياري";
+  updateLivePreview();
+});
+
+// Real-time preview update on input
+["updateLatestVersion", "updateTitle", "updateDescription", "updateApkUrl", "updateMinimumVersion"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", updateLivePreview);
+});
+
+function updateLivePreview() {
+  const version = document.getElementById("updateLatestVersion").value.trim();
+  const title = document.getElementById("updateTitle").value.trim();
+  const desc = document.getElementById("updateDescription").value.trim();
+  const force = document.getElementById("updateForce").checked;
+
+  let html = "";
+  if (version) {
+    html += `<div style="font-size:48px;margin-bottom:8px;">📦</div>`;
+    html += `<h3 style="font-size:17px;font-weight:700;margin-bottom:4px;">${title || "تحديث جديد متوفر"}</h3>`;
+    html += `<p style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">v${version}</p>`;
+  }
+  if (desc) {
+    html += `<div style="font-size:12px;color:var(--text);line-height:1.6;text-align:right;background:var(--bg);padding:8px 10px;border-radius:6px;margin-bottom:10px;max-height:100px;overflow-y:auto;">${desc}</div>`;
+  }
+  if (force) {
+    html += `<div style="font-size:11px;color:var(--danger);margin-bottom:8px;">⚠️ هذا التحديث إجباري</div>`;
+  }
+  if (version) {
+    html += `<a href="#" style="display:inline-block;background:var(--primary);color:white;padding:8px 24px;border-radius:8px;font-weight:600;font-size:13px;text-decoration:none;">تحديث الآن</a>`;
+  }
+  document.getElementById("updateLivePreview").innerHTML =
+    html || '<p style="color:var(--text-muted);font-size:14px;">سيتم عرض معاينة واجهة التحديث هنا.</p><p style="margin-top:8px;font-size:12px;">اضغط على "معاينة" لعرض مربع الحوار كما سيظهر في التطبيق.</p>';
+}
+
+async function loadUpdateInfo() {
+  try {
+    const doc = await db.collection("settings").doc("app").get();
+    if (doc.exists) {
+      const data = doc.data();
+      const updateInfo = data.updateInfo;
+      if (updateInfo) {
+        updateInfoData = updateInfo;
+        populateUpdateForm(updateInfo);
+      }
+    }
+  } catch (err) {
+    console.error("loadUpdateInfo error:", err);
+  }
+}
+
+function populateUpdateForm(info) {
+  document.getElementById("updateLatestVersion").value = info.latestVersion || "";
+  document.getElementById("updateMinimumVersion").value = info.minimumVersion || "";
+  document.getElementById("updateForce").checked = info.forceUpdate === true;
+  document.getElementById("updateForceLabel").textContent = info.forceUpdate ? "إجباري" : "اختياري";
+  document.getElementById("updateTitle").value = info.title || "";
+  document.getElementById("updateDescription").value = info.description || "";
+  document.getElementById("updateApkUrl").value = info.apkSourceUrl || "";
+  document.getElementById("updateReleaseDate").value = info.releaseDate || new Date().toLocaleDateString("ar-EG", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  updatePublishStatus(info);
+}
+
+function updatePublishStatus(info) {
+  const el = document.getElementById("updatePublishStatus");
+  if (info && info.latestVersion) {
+    el.textContent = "منشور";
+    el.className = "status-badge delivered";
+  } else {
+    el.textContent = "غير منشور";
+    el.className = "status-badge";
+  }
+}
+
+// Publish update handler
+document.getElementById("updateForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("publishUpdateBtn");
+  btn.disabled = true;
+  btn.textContent = "جاري النشر...";
+
+  const latestVersion = document.getElementById("updateLatestVersion").value.trim();
+  if (!latestVersion) {
+    alert("الرجاء إدخال رقم الإصدار");
+    btn.disabled = false;
+    btn.textContent = "نشر التحديث";
+    return;
+  }
+
+  const releaseDate = new Date().toLocaleDateString("ar-EG", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  const updateInfo = {
+    latestVersion,
+    minimumVersion: document.getElementById("updateMinimumVersion").value.trim() || null,
+    forceUpdate: document.getElementById("updateForce").checked,
+    title: document.getElementById("updateTitle").value.trim() || "تحديث جديد متوفر",
+    description: document.getElementById("updateDescription").value.trim() || "",
+    apkSourceUrl: document.getElementById("updateApkUrl").value.trim() || "",
+    releaseDate,
+  };
+
+  try {
+    await db.collection("settings").doc("app").set({ updateInfo }, { merge: true });
+    updateInfoData = updateInfo;
+    document.getElementById("updateReleaseDate").value = releaseDate;
+    updatePublishStatus(updateInfo);
+    btn.disabled = false;
+    btn.textContent = "نشر التحديث";
+    alert("✅ تم نشر التحديث بنجاح");
+  } catch (err) {
+    alert("❌ خطأ في النشر: " + err.message);
+    btn.disabled = false;
+    btn.textContent = "نشر التحديث";
+  }
+});
+
+// Preview dialog
+function showUpdatePreviewDialog() {
+  const latest = document.getElementById("updateLatestVersion").value.trim();
+  const title = document.getElementById("updateTitle").value.trim() || "تحديث جديد متوفر";
+  const desc = document.getElementById("updateDescription").value.trim();
+  const force = document.getElementById("updateForce").checked;
+  const apkUrl = document.getElementById("updateApkUrl").value.trim();
+  const minVer = document.getElementById("updateMinimumVersion").value.trim();
+
+  document.getElementById("previewDialogTitle").textContent = title;
+  document.getElementById("previewLatestVer").textContent = latest || "0.0.0";
+
+  const descEl = document.getElementById("previewDialogDesc");
+  if (desc) {
+    descEl.textContent = desc;
+    descEl.style.display = "block";
+  } else {
+    descEl.style.display = "none";
+  }
+
+  const forceEl = document.getElementById("previewDialogForce");
+  if (force) {
+    forceEl.textContent = minVer
+      ? `⚠️ هذا التحديث إجباري (أقل إصدار مدعوم: v${minVer})`
+      : "⚠️ هذا التحديث إجباري";
+    forceEl.style.display = "block";
+  } else {
+    forceEl.style.display = "none";
+  }
+
+  const linkEl = document.getElementById("previewDialogLink");
+  if (apkUrl) {
+    linkEl.href = apkUrl;
+  } else {
+    linkEl.href = "#";
+  }
+
+  document.getElementById("updatePreviewModal").classList.add("open");
+}
+
+window.closeUpdatePreview = function () {
+  document.getElementById("updatePreviewModal").classList.remove("open");
+};
+
 // ===== Init =====
 async function init() {
   await loadAdminCredentials();
@@ -1468,6 +1640,7 @@ async function init() {
     loadDeviceStats(),
     loadPrices(),
     loadRegions(),
+    loadUpdateInfo(),
   ]);
 }
 
