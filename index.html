@@ -460,7 +460,12 @@
         <h2>تحديثات التطبيق</h2>
       </div>
 
-      <div class="prices-layout" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+      <!-- Status Indicator -->
+      <div id="updateStatusBar" class="update-status-bar" style="margin-bottom:16px;">
+        <span id="updateStatusIndicator">⚪ لا يوجد تحديث منشور</span>
+      </div>
+
+      <div id="updateContentArea" class="prices-layout" style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
         <!-- Form -->
         <div class="notif-form-panel">
           <h3>بيانات التحديث</h3>
@@ -495,6 +500,11 @@
               <input type="url" id="updateApkUrl" placeholder="https://example.com/app.apk" dir="ltr" />
             </div>
             <div class="form-group">
+              <label>التحقق الرقمي (SHA-256)</label>
+              <input type="text" id="updateChecksum" placeholder="اختياري — a1b2c3d4..." dir="ltr" />
+              <p class="field-hint">بصمة SHA-256 الاختيارية للملف. سيتم التحقق منها قبل التثبيت.</p>
+            </div>
+            <div class="form-group">
               <label>تاريخ الإصدار</label>
               <input type="text" id="updateReleaseDate" style="color:var(--text-muted);font-size:12px;" readonly />
             </div>
@@ -505,16 +515,42 @@
             <div style="display:flex;gap:8px;margin-top:20px;">
               <button type="submit" class="btn btn-primary" style="flex:1;justify-content:center;padding:12px;font-size:15px;" id="publishUpdateBtn">نشر التحديث</button>
               <button type="button" class="btn btn-outline" style="flex:1;justify-content:center;padding:12px;font-size:15px;" id="previewUpdateBtn" onclick="showUpdatePreviewDialog()">معاينة</button>
+              <button type="button" class="btn btn-danger" style="flex:0 0 auto;justify-content:center;padding:12px 18px;font-size:15px;display:none;" id="deleteUpdateBtn" onclick="confirmDeleteUpdate()">حذف التحديث</button>
             </div>
           </form>
         </div>
 
         <!-- Preview -->
-        <div class="notif-form-panel">
+        <div class="notif-form-panel" id="updatePreviewPanel">
           <h3>معاينة شاشة التحديث</h3>
           <div id="updateLivePreview" style="text-align:center;padding:20px;color:var(--text-muted);font-size:14px;">
             <p>سيتم عرض معاينة واجهة التحديث هنا.</p>
             <p style="margin-top:8px;font-size:12px;">اضغط على "معاينة" لعرض مربع الحوار كما سيظهر في التطبيق.</p>
+          </div>
+          <!-- Empty State -->
+          <div id="updateEmptyState" style="display:none;text-align:center;padding:32px 20px;color:var(--text-muted);">
+            <div style="font-size:40px;margin-bottom:12px;">📭</div>
+            <h3 style="font-size:16px;font-weight:600;margin-bottom:6px;color:var(--text);">لا يوجد تحديث منشور</h3>
+            <p style="font-size:13px;line-height:1.7;">قم بإدخال بيانات التحديث الجديد واضغط على "نشر التحديث" لنشره للمستخدمين.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Delete Confirmation Modal -->
+      <div class="modal-overlay" id="deleteUpdateModal">
+        <div class="modal" style="max-width:400px;">
+          <div class="modal-header">
+            <h3>حذف التحديث</h3>
+            <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p style="font-size:14px;line-height:1.7;margin-bottom:20px;color:var(--text);">
+              سيؤدي حذف هذا التحديث إلى إيقاف إشعارات التحديث لجميع المستخدمين. هل تريد المتابعة؟
+            </p>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-danger" style="flex:1;justify-content:center;padding:12px;font-size:15px;" id="confirmDeleteBtn" onclick="deleteUpdate()">حذف</button>
+              <button class="btn btn-outline" style="flex:1;justify-content:center;padding:12px;font-size:15px;" onclick="closeDeleteModal()">إلغاء</button>
+            </div>
           </div>
         </div>
       </div>

@@ -1496,13 +1496,63 @@ async function loadUpdateInfo() {
     if (doc.exists) {
       const data = doc.data();
       const updateInfo = data.updateInfo;
-      if (updateInfo) {
+      if (updateInfo && updateInfo.latestVersion) {
         updateInfoData = updateInfo;
         populateUpdateForm(updateInfo);
+        updateUIState(true);
+        return;
       }
     }
+    // No update found — reset to empty state
+    updateInfoData = null;
+    resetUpdateForm();
+    updateUIState(false);
   } catch (err) {
     console.error("loadUpdateInfo error:", err);
+    updateInfoData = null;
+    resetUpdateForm();
+    updateUIState(false);
+  }
+}
+
+function resetUpdateForm() {
+  document.getElementById("updateLatestVersion").value = "";
+  document.getElementById("updateMinimumVersion").value = "";
+  document.getElementById("updateForce").checked = false;
+  document.getElementById("updateForceLabel").textContent = "اختياري";
+  document.getElementById("updateTitle").value = "";
+  document.getElementById("updateDescription").value = "";
+  document.getElementById("updateApkUrl").value = "";
+  document.getElementById("updateReleaseDate").value = "";
+  updatePublishStatus(null);
+}
+
+function updateUIState(hasUpdate) {
+  const deleteBtn = document.getElementById("deleteUpdateBtn");
+  const statusIndicator = document.getElementById("updateStatusIndicator");
+  const previewPanel = document.getElementById("updateLivePreview");
+  const emptyState = document.getElementById("updateEmptyState");
+
+  if (hasUpdate) {
+    deleteBtn.style.display = "inline-flex";
+    statusIndicator.innerHTML = "🟢 يوجد تحديث منشور";
+    statusIndicator.style.color = "var(--success)";
+    previewPanel.style.display = "block";
+    emptyState.style.display = "none";
+    document.getElementById("updatePreviewPanel").querySelector("h3").textContent = "معاينة شاشة التحديث";
+    // Enable form inputs
+    document.querySelectorAll("#updateForm input, #updateForm textarea").forEach((el) => (el.disabled = false));
+    document.getElementById("publishUpdateBtn").disabled = false;
+  } else {
+    deleteBtn.style.display = "none";
+    statusIndicator.innerHTML = "⚪ لا يوجد تحديث منشور";
+    statusIndicator.style.color = "var(--text-muted)";
+    previewPanel.style.display = "none";
+    emptyState.style.display = "block";
+    document.getElementById("updatePreviewPanel").querySelector("h3").textContent = "إنشاء تحديث جديد";
+    // Keep form enabled so owner can create a new update
+    document.querySelectorAll("#updateForm input, #updateForm textarea").forEach((el) => (el.disabled = false));
+    document.getElementById("publishUpdateBtn").disabled = false;
   }
 }
 
@@ -1514,12 +1564,14 @@ function populateUpdateForm(info) {
   document.getElementById("updateTitle").value = info.title || "";
   document.getElementById("updateDescription").value = info.description || "";
   document.getElementById("updateApkUrl").value = info.apkSourceUrl || "";
+  document.getElementById("updateChecksum").value = info.checksum || "";
   document.getElementById("updateReleaseDate").value = info.releaseDate || new Date().toLocaleDateString("ar-EG", {
     year: "numeric",
     month: "long",
     day: "numeric",
   });
   updatePublishStatus(info);
+  updateUIState(true);
 }
 
 function updatePublishStatus(info) {
@@ -1548,6 +1600,28 @@ document.getElementById("updateForm").addEventListener("submit", async (e) => {
     return;
   }
 
+  const apkSourceUrl = document.getElementById("updateApkUrl").value.trim();
+  if (!apkSourceUrl) {
+    alert("الرجاء إدخال رابط APK");
+    btn.disabled = false;
+    btn.textContent = "نشر التحديث";
+    return;
+  }
+  try {
+    const urlObj = new URL(apkSourceUrl);
+    if (urlObj.protocol !== "http:" && urlObj.protocol !== "https:") {
+      alert("رابط APK غير صالح: يجب أن يبدأ بـ http:// أو https://");
+      btn.disabled = false;
+      btn.textContent = "نشر التحديث";
+      return;
+    }
+  } catch {
+    alert("رابط APK غير صالح: الرجاء إدخال رابط صحيح");
+    btn.disabled = false;
+    btn.textContent = "نشر التحديث";
+    return;
+  }
+
   const releaseDate = new Date().toLocaleDateString("ar-EG", {
     year: "numeric",
     month: "long",
@@ -1560,7 +1634,8 @@ document.getElementById("updateForm").addEventListener("submit", async (e) => {
     forceUpdate: document.getElementById("updateForce").checked,
     title: document.getElementById("updateTitle").value.trim() || "تحديث جديد متوفر",
     description: document.getElementById("updateDescription").value.trim() || "",
-    apkSourceUrl: document.getElementById("updateApkUrl").value.trim() || "",
+    apkSourceUrl,
+    checksum: document.getElementById("updateChecksum").value.trim() || null,
     releaseDate,
   };
 
@@ -1569,6 +1644,7 @@ document.getElementById("updateForm").addEventListener("submit", async (e) => {
     updateInfoData = updateInfo;
     document.getElementById("updateReleaseDate").value = releaseDate;
     updatePublishStatus(updateInfo);
+    updateUIState(true);
     btn.disabled = false;
     btn.textContent = "نشر التحديث";
     alert("✅ تم نشر التحديث بنجاح");
@@ -1621,6 +1697,39 @@ function showUpdatePreviewDialog() {
 
 window.closeUpdatePreview = function () {
   document.getElementById("updatePreviewModal").classList.remove("open");
+};
+
+// ===== Delete Update =====
+window.confirmDeleteUpdate = function () {
+  document.getElementById("deleteUpdateModal").classList.add("open");
+};
+
+window.closeDeleteModal = function () {
+  document.getElementById("deleteUpdateModal").classList.remove("open");
+};
+
+window.deleteUpdate = async function () {
+  const btn = document.getElementById("confirmDeleteBtn");
+  btn.disabled = true;
+  btn.textContent = "جاري الحذف...";
+
+  try {
+    // Use FieldValue.delete() to completely remove the updateInfo field
+    await db.collection("settings").doc("app").update({
+      updateInfo: firebase.firestore.FieldValue.delete(),
+    });
+    updateInfoData = null;
+    resetUpdateForm();
+    updateUIState(false);
+    document.getElementById("deleteUpdateModal").classList.remove("open");
+    btn.disabled = false;
+    btn.textContent = "حذف";
+    alert("✅ تم حذف التحديث بنجاح");
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = "حذف";
+    alert("❌ خطأ في الحذف: " + err.message);
+  }
 };
 
 // ===== Init =====
