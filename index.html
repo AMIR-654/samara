@@ -51,6 +51,7 @@
       <button class="tab" data-tab="prices">قائمة الأسعار</button>
       <button class="tab" data-tab="notifications">الإشعارات</button>
       <button class="tab" data-tab="updates">تحديثات التطبيق</button>
+      <button class="tab" data-tab="clients">العملاء</button>
       <button class="tab" data-tab="settings">الإعدادات</button>
     </nav>
 
@@ -287,26 +288,26 @@
         </div>
       </div>
 
-      <!-- Device Stats Grid -->
+      <!-- Client Stats (replaces old device stats) -->
       <div class="section-header" style="margin-top: 24px; margin-bottom: 12px;">
-        <h3>إحصائيات الأجهزة والرموز</h3>
+        <h3>إحصائيات العملاء</h3>
       </div>
       <div class="stats-grid" style="margin-bottom: 32px;">
         <div class="stat-card">
-          <span class="stat-num" id="statsDevices">0</span>
-          <span class="stat-label">إجمالي الأجهزة المسجلة</span>
+          <span class="stat-num" id="notifClientsTotal">0</span>
+          <span class="stat-label">إجمالي العملاء</span>
         </div>
         <div class="stat-card">
-          <span class="stat-num" id="statsActiveTokens">0</span>
-          <span class="stat-label">رموز الدفع النشطة</span>
+          <span class="stat-num" id="notifClientsToday">0</span>
+          <span class="stat-label">مسجل اليوم</span>
         </div>
         <div class="stat-card">
-          <span class="stat-num" id="statsAvailableDevices">0</span>
-          <span class="stat-label">أجهزة متاحة للتوصيل</span>
+          <span class="stat-num" id="notifClientsActive">0</span>
+          <span class="stat-label">نشط حالياً</span>
         </div>
         <div class="stat-card">
-          <span class="stat-num" id="statsLastReg" style="font-size: 13px; font-weight: 700; text-align: center; direction: ltr; min-height: 42px; display: flex; align-items: center;">-</span>
-          <span class="stat-label">آخر تسجيل جهاز</span>
+          <span class="stat-num" id="notifClientsLastReg" style="font-size: 13px; font-weight: 700; text-align: center; direction: ltr; min-height: 42px; display: flex; align-items: center;">-</span>
+          <span class="stat-label">آخر تسجيل</span>
         </div>
       </div>
 
@@ -368,6 +369,53 @@
             <tbody id="notifHistoryBody"></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <!-- Clients Tab -->
+    <section id="tab-clients" class="tab-content">
+      <div class="section-header">
+        <h2>إدارة العملاء</h2>
+      </div>
+
+      <!-- Clients Stats Grid -->
+      <div class="stats-grid" style="margin-bottom: 24px;">
+        <div class="stat-card">
+          <span class="stat-num" id="clientsTotal">0</span>
+          <span class="stat-label">إجمالي العملاء</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num" id="clientsToday">0</span>
+          <span class="stat-label">مسجل اليوم</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-num" id="clientsActive">0</span>
+          <span class="stat-label">نشط حالياً</span>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="filter-bar" style="margin-bottom: 16px;">
+        <input type="text" id="clientsSearch" placeholder="بحث بالاسم أو رقم الهاتف..." oninput="filterClients()" />
+      </div>
+
+      <!-- Clients Table -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>رقم الهاتف</th>
+              <th>تاريخ التسجيل</th>
+              <th>آخر ظهور</th>
+              <th>الإصدار</th>
+              <th>المنصة</th>
+              <th>الجهاز</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="clientsBody"></tbody>
+        </table>
       </div>
     </section>
 

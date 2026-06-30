@@ -924,11 +924,16 @@ function renderNotifications() {
 
   body.innerHTML = filtered
     .map((n) => {
-      const dateLabel = n.createdAt ? new Date(n.createdAt).toLocaleString("ar-EG") : "-";
+      const dateLabel = n.createdAt
+        ? (n.createdAt.toDate ? n.createdAt.toDate() : new Date(n.createdAt)).toLocaleString("ar-EG")
+        : "-";
       const isDelivered = n.deliveryStatus === "delivered";
       const statusLabel = isDelivered ? "تم التسليم" : n.deliveryStatus === "failed" ? "فشل" : "معلق";
       const statusClass = isDelivered ? "delivered" : n.deliveryStatus === "failed" ? "failed" : "unread";
       const linkCell = n.link ? `<a href="${n.link}" target="_blank" style="direction:ltr;font-size:11px;word-break:break-all;">${n.link}</a>` : "-";
+      const readBtn = !n.readStatus
+        ? `<button class="btn btn-sm btn-outline" onclick="markNotificationRead('${n.id}')">تحديد كمقروء</button>`
+        : "";
       return `
         <tr>
           <td><strong>${n.title || ""}</strong></td>
@@ -937,6 +942,7 @@ function renderNotifications() {
           <td style="font-size:12px;">${dateLabel}</td>
           <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
           <td>
+            ${readBtn}
             <button class="btn btn-sm btn-danger" onclick="deleteHistoryItem('${n.id}')">حذف</button>
           </td>
         </tr>
@@ -956,6 +962,16 @@ window.deleteHistoryItem = async (id) => {
     calculateStats();
   } catch (err) {
     alert("خطأ في الحذف: " + err.message);
+  }
+};
+
+window.markNotificationRead = async (id) => {
+  try {
+    await db.collection("notifications").doc(id).update({ readStatus: true });
+    await loadNotifications();
+    calculateStats();
+  } catch (err) {
+    alert("خطأ: " + err.message);
   }
 };
 
@@ -980,48 +996,130 @@ function calculateStats() {
   $("statsUnread").textContent = unread;
 }
 
-// ===== Device Statistics =====
-async function loadDeviceStats() {
+// ===== Clients =====
+let clientsCache = [];
+
+async function loadClients() {
   try {
-    const snap = await db.collection("push_tokens").get();
-    const tokenDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    const totalDevices = tokenDocs.length;
-    const activeTokens = tokenDocs.filter((d) => d.token).length;
-    const availableDevices = activeTokens;
-
-    let lastRegTimestamp = null;
-    tokenDocs.forEach((d) => {
-      if (d.updatedAt) {
-        if (!lastRegTimestamp || d.updatedAt > lastRegTimestamp) {
-          lastRegTimestamp = d.updatedAt;
-        }
-      }
-    });
-
-    const lastRegLabel = lastRegTimestamp 
-      ? new Date(lastRegTimestamp).toLocaleString("ar-EG") 
-      : "-";
-
-    $("statsDevices").textContent = totalDevices;
-    $("statsActiveTokens").textContent = activeTokens;
-    $("statsAvailableDevices").textContent = availableDevices;
-    $("statsLastReg").textContent = lastRegLabel;
-
-    // Conditionally show/hide warning message if it exists
-    const statusMsg = ["", "⚠️ لا توجد أجهزة مسجلة حتى الآن."];
-    const statusMsgElement = $("notifStatusMsg");
-    if (activeTokens === 0) {
-      statusMsgElement.textContent = "⚠️ لا توجد أجهزة مسجلة حتى الآن.";
-      statusMsgElement.style.color = "var(--text-muted)";
-    } else {
-      if (statusMsgElement.textContent === "⚠️ لا توجد أجهزة مسجلة حتى الآن.") {
-        statusMsgElement.textContent = "";
-      }
-    }
+    const snap = await db.collection("clients").get();
+    clientsCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderClients();
+    updateClientStats();
   } catch (err) {
-    console.error("loadDeviceStats error:", err);
+    console.error("loadClients error:", err);
+    $("clientsBody").innerHTML =
+      '<tr><td colspan="8" style="text-align:center;color:var(--danger);padding:32px;">خطأ في تحميل بيانات العملاء</td></tr>';
   }
+}
+
+function formatClientDate(ts) {
+  if (!ts) return "-";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleString("ar-EG");
+}
+
+function renderClients(filterText) {
+  const body = $("clientsBody");
+  const search = (filterText ?? ($("clientsSearch")?.value ?? "")).toLowerCase().trim();
+
+  let filtered = clientsCache;
+  if (search) {
+    filtered = clientsCache.filter((c) => {
+      const name = (c.name || "").toLowerCase();
+      const phone = (c.phone || "").toLowerCase();
+      return name.includes(search) || phone.includes(search);
+    });
+  }
+
+  if (!filtered.length) {
+    body.innerHTML =
+      '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:32px;">' +
+      (clientsCache.length === 0 ? "لا يوجد عملاء مسجلون بعد" : "لا توجد نتائج مطابقة") +
+      "</td></tr>";
+    return;
+  }
+
+  const sorted = [...filtered].sort((a, b) => {
+    const aTime = a.registeredAt?.toDate?.()?.getTime() ?? a.registeredAt ?? 0;
+    const bTime = b.registeredAt?.toDate?.()?.getTime() ?? b.registeredAt ?? 0;
+    return bTime - aTime;
+  });
+
+  body.innerHTML = sorted
+    .map(
+      (c) => `
+    <tr>
+      <td><strong>${escapeHtml(c.name || "-")}</strong></td>
+      <td dir="ltr" style="text-align:right;">${escapeHtml(c.phone || "-")}</td>
+      <td style="font-size:12px;">${formatClientDate(c.registeredAt)}</td>
+      <td style="font-size:12px;">${formatClientDate(c.lastSeen)}</td>
+      <td style="font-size:12px;">${escapeHtml(c.appVersion || "-")}</td>
+      <td style="font-size:12px;">${escapeHtml(c.platform || "-")}</td>
+      <td style="font-size:12px;">${escapeHtml(c.deviceModel || "-")}</td>
+      <td>
+        <button class="btn btn-sm btn-danger" onclick="deleteClient('${c.id}')">حذف</button>
+      </td>
+    </tr>`
+    )
+    .join("");
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+window.filterClients = function () {
+  renderClients();
+};
+
+window.deleteClient = async function (id) {
+  if (!confirm("هل تريد حذف هذا العميل بشكل نهائي؟")) return;
+  try {
+    await db.collection("clients").doc(id).delete();
+    await loadClients();
+  } catch (err) {
+    alert("خطأ في الحذف: " + err.message);
+  }
+};
+
+function updateClientStats() {
+  const total = clientsCache.length;
+
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const todayEnd = new Date(todayStart.getTime() + 86400000);
+
+  const registeredToday = clientsCache.filter((c) => {
+    const t = c.registeredAt?.toDate?.() ?? new Date(c.registeredAt ?? 0);
+    return t >= todayStart && t < todayEnd;
+  }).length;
+
+  const activeToday = clientsCache.filter((c) => {
+    const t = c.lastSeen?.toDate?.() ?? new Date(c.lastSeen ?? 0);
+    return t >= todayStart;
+  }).length;
+
+  let lastRegTimestamp = null;
+  clientsCache.forEach((c) => {
+    const t = c.registeredAt?.toDate?.() ?? c.registeredAt;
+    if (t && (!lastRegTimestamp || t > lastRegTimestamp)) lastRegTimestamp = t;
+  });
+  const lastRegLabel = lastRegTimestamp
+    ? (lastRegTimestamp.toDate ? lastRegTimestamp.toDate() : new Date(lastRegTimestamp)).toLocaleString("ar-EG")
+    : "-";
+
+  // Client tab stats
+  $("clientsTotal").textContent = total;
+  $("clientsToday").textContent = registeredToday;
+  $("clientsActive").textContent = activeToday;
+
+  // Notifications tab client stats
+  $("notifClientsTotal").textContent = total;
+  $("notifClientsToday").textContent = registeredToday;
+  $("notifClientsActive").textContent = activeToday;
+  $("notifClientsLastReg").textContent = lastRegLabel;
 }
 
 // ===== Authentication =====
@@ -1029,7 +1127,7 @@ const ADMIN_CRED_DOC = "admin_credentials";
 let isAuthenticated = false;
 
 function checkAuth() {
-  const session = sessionStorage.getItem("admin_auth");
+  const session = localStorage.getItem("admin_auth");
   if (session === "true") {
     isAuthenticated = true;
     $("loginOverlay").classList.remove("open");
@@ -1746,7 +1844,7 @@ async function init() {
     loadGlobalButtons(),
     loadSettings(),
     loadNotifications().then(calculateStats),
-    loadDeviceStats(),
+    loadClients(),
     loadPrices(),
     loadRegions(),
     loadUpdateInfo(),
