@@ -1179,13 +1179,25 @@ async function handleLogin() {
 
   const valid = await verifyCredentials(username, password);
   if (valid) {
-    sessionStorage.setItem("admin_auth", "true");
+    localStorage.setItem("admin_auth", "true");
     isAuthenticated = true;
     $("loginOverlay").classList.remove("open");
     $("logoutBtn").style.display = "inline-flex";
     $("loginUsername").value = "";
     $("loginPassword").value = "";
     errorEl.style.display = "none";
+
+    // Load all data after successful login
+    await Promise.all([
+      loadCategories(),
+      loadGlobalButtons(),
+      loadSettings(),
+      loadNotifications().then(calculateStats),
+      loadClients(),
+      loadPrices(),
+      loadRegions(),
+      loadUpdateInfo(),
+    ]);
   } else {
     errorEl.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة";
     errorEl.style.display = "block";
@@ -1196,7 +1208,7 @@ async function handleLogin() {
 }
 
 function handleLogout() {
-  sessionStorage.removeItem("admin_auth");
+  localStorage.removeItem("admin_auth");
   isAuthenticated = false;
   $("logoutBtn").style.display = "none";
   $("loginOverlay").classList.add("open");
