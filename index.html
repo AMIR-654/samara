@@ -51,6 +51,7 @@
       <button class="tab" data-tab="prices">قائمة الأسعار</button>
       <button class="tab" data-tab="notifications">الإشعارات</button>
       <button class="tab" data-tab="updates">تحديثات التطبيق</button>
+      <button class="tab" data-tab="gateways">البوابات</button>
       <button class="tab" data-tab="clients">العملاء</button>
       <button class="tab" data-tab="settings">الإعدادات</button>
     </nav>
@@ -628,6 +629,31 @@
       </div>
     </section><!-- /tab-updates -->
 
+    <!-- Gateways Tab -->
+    <section id="tab-gateways" class="tab-content">
+      <div class="section-header">
+        <h2>إدارة بوابات VLAN</h2>
+        <button class="btn btn-primary" id="addGatewayBtn">+ إضافة بوابة</button>
+      </div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+        البوابات المستخدمة في زر "إظهار رقم الكارت" بالتطبيق. يتم تخزينها في الإعدادات البعيدة.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الترتيب</th>
+              <th>عنوان IP</th>
+              <th>VLAN</th>
+              <th>الحالة</th>
+              <th>الإجراءات</th>
+            </tr>
+          </thead>
+          <tbody id="gatewaysBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- Items Modal -->
     <div class="modal-overlay" id="itemsModal">
       <div class="modal">
@@ -814,7 +840,40 @@
       </div>
     </div>
 
-
+    <!-- Gateway Modal -->
+    <div class="modal-overlay" id="gatewayModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3 id="gatewayModalTitle">إضافة/تعديل بوابة</h3>
+          <button class="modal-close" id="gatewayModalClose">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="gatewayForm">
+            <input type="hidden" id="gatewayIndex" />
+            <div class="form-group">
+              <label>عنوان IP <span class="required">*</span></label>
+              <input type="text" id="gatewayIp" placeholder="مثال: 10.102.0.1" dir="ltr" required />
+            </div>
+            <div class="form-group">
+              <label>رقم VLAN</label>
+              <input type="text" id="gatewayVlan" placeholder="وصف فقط — مثال: 102" dir="ltr" />
+            </div>
+            <div class="form-group">
+              <label>ترتيب الفرز</label>
+              <input type="number" id="gatewaySortOrder" value="0" />
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="gatewayStatus">
+                <option value="active">مفعل</option>
+                <option value="disabled">معطل</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
 
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js"></script>

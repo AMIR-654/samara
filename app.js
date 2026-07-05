@@ -67,6 +67,7 @@ let regionsCache = [];
 let salePointsCache = [];
 let currentSalePointRegion = null;
 let activeNotifUnsubscribe = null; // لإيقاف أي listener سابق قبل إرسال إشعار جديد
+let gatewaysCache = [];
 
 const $ = (id) => document.getElementById(id);
 const categoriesBody = $("categoriesBody");
@@ -786,6 +787,122 @@ $("settingsForm").addEventListener("submit", async (e) => {
     alert("خطأ: " + err.message);
   }
 });
+
+// ===== VLAN Gateways =====
+function isValidIp(v) {
+  const parts = v.split(".");
+  if (parts.length !== 4) return false;
+  return parts.every(function(p) {
+    var n = Number(p);
+    return Number.isFinite(n) && n >= 0 && n <= 255 && String(n) === p;
+  });
+}
+
+async function loadGateways() {
+  try {
+    const doc = await db.collection("settings").doc("app").get();
+    gatewaysCache = [];
+    if (doc.exists) {
+      var raw = doc.data().cardGatewayIps;
+      if (Array.isArray(raw)) {
+        gatewaysCache = raw.map(function(g, i) { return { index: i, gatewayIp: g.gatewayIp || "", vlan: g.vlan || "", enabled: g.enabled !== false, sortOrder: g.sortOrder || 0 }; });
+      }
+    }
+  } catch (e) {
+    gatewaysCache = [];
+  }
+  renderGateways();
+}
+
+function renderGateways() {
+  var sorted = gatewaysCache.slice().sort(function(a, b) { return (a.sortOrder || 999) - (b.sortOrder || 999); });
+  var body = $("gatewaysBody");
+  if (!sorted.length) {
+    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:32px;">لا توجد بوابات بعد</td></tr>';
+    return;
+  }
+  body.innerHTML = sorted.map(function(g) {
+    return '<tr>' +
+      '<td>' + (g.sortOrder || "-") + '</td>' +
+      '<td style="direction:ltr;font-family:monospace;">' + g.gatewayIp + '</td>' +
+      '<td>' + (g.vlan || "-") + '</td>' +
+      '<td>' + (g.enabled ? '<span class="status-badge active">مفعل</span>' : '<span class="status-badge disabled">معطل</span>') + '</td>' +
+      '<td><div class="action-btns">' +
+        '<button class="btn btn-sm btn-primary" onclick="editGateway(' + g.index + ')">تعديل</button>' +
+        '<button class="btn btn-sm btn-danger" onclick="deleteGateway(' + g.index + ')">حذف</button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join("");
+}
+
+function openGatewayModal(gw) {
+  $("gatewayModalTitle").textContent = gw ? "تعديل بوابة" : "إضافة بوابة";
+  $("gatewayIndex").value = gw !== null && gw !== undefined ? gw.index : "";
+  $("gatewayIp").value = gw ? gw.gatewayIp : "";
+  $("gatewayVlan").value = gw ? gw.vlan : "";
+  $("gatewaySortOrder").value = gw ? gw.sortOrder : 0;
+  $("gatewayStatus").value = gw && gw.enabled ? "active" : gw && !gw.enabled ? "disabled" : "active";
+  $("gatewayModal").classList.add("open");
+}
+
+$("addGatewayBtn").addEventListener("click", function() { openGatewayModal(null); });
+$("gatewayModalClose").addEventListener("click", function() { $("gatewayModal").classList.remove("open"); });
+
+window.editGateway = function(index) {
+  var gw = gatewaysCache.find(function(g) { return g.index === index; });
+  if (gw) openGatewayModal(gw);
+};
+
+window.deleteGateway = function(index) {
+  if (!confirm("هل تريد حذف هذه البوابة؟")) return;
+  gatewaysCache = gatewaysCache.filter(function(g) { return g.index !== index; });
+  saveAllGateways();
+};
+
+$("gatewayForm").addEventListener("submit", async function(e) {
+  e.preventDefault();
+  var idx = $("gatewayIndex").value;
+  var ip = $("gatewayIp").value.trim();
+  var vlan = $("gatewayVlan").value.trim();
+  var sortOrder = parseInt($("gatewaySortOrder").value) || 0;
+  var enabled = $("gatewayStatus").value === "active";
+
+  // Validate IP
+  if (!ip) { alert("يرجى إدخال عنوان IP"); return; }
+  if (!isValidIp(ip)) { alert("عنوان IP غير صالح"); return; }
+
+  // Check duplicate IP (exclude current entry being edited)
+  var duplicate = gatewaysCache.some(function(g) { return g.gatewayIp === ip && String(g.index) !== idx; });
+  if (duplicate) { alert("عنوان IP موجود مسبقاً"); return; }
+
+  if (idx !== "") {
+    // Edit existing
+    var existing = gatewaysCache.find(function(g) { return String(g.index) === idx; });
+    if (existing) {
+      existing.gatewayIp = ip;
+      existing.vlan = vlan;
+      existing.sortOrder = sortOrder;
+      existing.enabled = enabled;
+    }
+  } else {
+    // Add new
+    var newIndex = gatewaysCache.length > 0 ? Math.max.apply(null, gatewaysCache.map(function(g) { return g.index; })) + 1 : 0;
+    gatewaysCache.push({ index: newIndex, gatewayIp: ip, vlan: vlan, sortOrder: sortOrder, enabled: enabled });
+  }
+
+  $("gatewayModal").classList.remove("open");
+  await saveAllGateways();
+});
+
+async function saveAllGateways() {
+  var list = gatewaysCache.map(function(g) { return { gatewayIp: g.gatewayIp, vlan: g.vlan, enabled: g.enabled, sortOrder: g.sortOrder }; });
+  try {
+    await db.collection("settings").doc("app").set({ cardGatewayIps: list }, { merge: true });
+    renderGateways();
+  } catch (err) {
+    alert("خطأ في حفظ البوابات: " + err.message);
+  }
+}
 
 // ===== Notifications — Simple Send =====
 function soundForToken(tokenDoc) {
@@ -1860,6 +1977,7 @@ async function init() {
     loadPrices(),
     loadRegions(),
     loadUpdateInfo(),
+    loadGateways(),
   ]);
 }
 
