@@ -94,7 +94,23 @@ async function openMerchantModal(merchant) {
   $("merchantName").value = m ? m.name : "";
   $("merchantPhone").value = m ? m.phone : "";
   $("merchantUsername").value = m ? m.username : "";
-  $("merchantPassword").value = "";
+
+  // When editing: load the current password (so admin can see/change it).
+  // When creating: clear it.
+  const currentPwd = m ? (m.password || "") : "";
+  $("merchantPassword").value = currentPwd;
+  $("merchantOriginalPassword").value = currentPwd;
+
+  // Show hint in edit mode so admin knows leaving it blank preserves the password
+  const pwdHint = $("merchantPwdHint");
+  if (pwdHint) pwdHint.style.display = m ? "block" : "none";
+
+  // Reset visibility state: always start hidden
+  const pwdInput = $("merchantPassword");
+  const pwdToggle = $("merchantPasswordToggle");
+  if (pwdInput) pwdInput.type = "password";
+  if (pwdToggle) pwdToggle.textContent = "\uD83D\uDC41"; // 👁
+
   $("merchantAddress").value = m ? m.address || "" : "";
   $("merchantNotes").value = m ? m.notes || "" : "";
   $("merchantSupportsInstallations").checked = m ? m.supportsInstallations ?? false : false;
@@ -118,8 +134,17 @@ async function saveMerchant(e) {
   if (!username) { showToast("اسم المستخدم مطلوب", "warning"); return; }
   if (username.length < 3) { showToast("اسم المستخدم يجب أن يكون 3 أحرف على الأقل", "warning"); return; }
 
-  const password = $("merchantPassword").value.trim();
-  if (!id && !password) { showToast("كلمة المرور مطلوبة للتاجر الجديد", "warning"); return; }
+  const passwordRaw = $("merchantPassword").value.trim();
+  const originalPassword = $("merchantOriginalPassword").value;
+
+  // For new merchants: password is required.
+  // For existing merchants: if left blank → keep the original password.
+  if (!id && !passwordRaw) { showToast("كلمة المرور مطلوبة للتاجر الجديد", "warning"); return; }
+
+  // Resolve the password to save:
+  // - New merchant: use what was entered
+  // - Editing: use entered value if changed, otherwise keep original
+  const resolvedPassword = passwordRaw || originalPassword;
 
   const data = {
     name, phone, username,
@@ -138,7 +163,8 @@ async function saveMerchant(e) {
     if (isDuplicate) { showToast("اسم المستخدم موجود بالفعل، يرجى اختيار اسم آخر", "warning"); return; }
 
     if (id) {
-      if (password) data.password = password;
+      // Always persist the resolved password (entered or original — never lose it)
+      data.password = resolvedPassword;
       data.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
       const date = new Date().toISOString().split("T")[0];
       const time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
@@ -160,7 +186,7 @@ async function saveMerchant(e) {
       });
       showToast("✅ تم تحديث التاجر بنجاح", "success");
     } else {
-      data.password = password;
+      data.password = resolvedPassword;
       data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
       data.totalCards = 0; data.totalCardValue = 0; data.totalSettlements = 0;
       data.totalCollections = 0; data.currentBalance = 0; data.installationCount = 0;
@@ -214,9 +240,23 @@ async function archiveMerchant(id) {
   }
 }
 
+function toggleMerchantPasswordVisibility() {
+  const input = $("merchantPassword");
+  const btn = $("merchantPasswordToggle");
+  if (!input) return;
+  if (input.type === "password") {
+    input.type = "text";
+    if (btn) btn.textContent = "\uD83D\uDD12"; // 🔒 = currently visible, click to hide
+  } else {
+    input.type = "password";
+    if (btn) btn.textContent = "\uD83D\uDC41"; // 👁 = currently hidden, click to show
+  }
+}
+
 window.loadMerchants = loadMerchants;
 window.saveMerchant = saveMerchant;
 window.openMerchantModal = openMerchantModal;
+window.toggleMerchantPasswordVisibility = toggleMerchantPasswordVisibility;
 window.toggleMerchantStatus = toggleMerchantStatus;
 window.archiveMerchant = archiveMerchant;
 window.filterMerchants = filterMerchants;
