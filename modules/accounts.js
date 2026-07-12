@@ -230,14 +230,6 @@ function renderMerchantCard(m) {
         </button>
         <div class="merchant-card-more">
           <button class="merchant-card-action" onclick="toggleCardMoreMenu(event, '${m.id}')">المزيد ▼</button>
-          <div class="merchant-card-more-menu" id="moreMenu_${m.id}">
-            <button onclick="openStatementModal('${m.id}')">📊 كشف الحساب</button>
-            <button onclick="openInstallationModal('${m.id}')">🔧 إضافة تركيب</button>
-            <button onclick="archiveMerchant('${m.id}')">📦 أرشفة</button>
-            <button onclick="resetMerchantFromCard('${m.id}')">🔄 إعادة تعيين المحاسبة</button>
-            <button onclick="viewMerchantAuditLogFromCard('${m.id}')">📋 سجل العمليات</button>
-            <button onclick="deleteMerchant('${m.id}')" style="color:var(--danger); font-weight:600;">🗑️ حذف التاجر</button>
-          </div>
         </div>
       </div>
     </div>
@@ -246,21 +238,84 @@ function renderMerchantCard(m) {
 
 function toggleCardMoreMenu(event, merchantId) {
   event.stopPropagation();
-  const menu = $(`moreMenu_${merchantId}`);
-  if (!menu) return;
-  const isOpen = menu.classList.contains("open");
-  document.querySelectorAll(".merchant-card-more-menu.open").forEach((el) => el.classList.remove("open"));
-  if (!isOpen) {
-    menu.classList.add("open");
-    const close = (e) => {
-      if (!e.target.closest(".merchant-card-more")) {
-        menu.classList.remove("open");
-        document.removeEventListener("click", close);
-      }
-    };
-    setTimeout(() => document.addEventListener("click", close), 0);
+  
+  let menu = $("globalMerchantMoreMenu");
+  if (!menu) {
+    menu = document.createElement("div");
+    menu.id = "globalMerchantMoreMenu";
+    menu.className = "merchant-card-more-menu";
+    menu.style.position = "fixed";
+    menu.style.zIndex = "99999";
+    menu.style.display = "none";
+    document.body.appendChild(menu);
+  }
+
+  const isCurrentlyOpenForThisMerchant = menu.style.display === "block" && menu.dataset.merchantId === merchantId;
+  
+  if (isCurrentlyOpenForThisMerchant) {
+    menu.style.display = "none";
+    return;
+  }
+
+  menu.dataset.merchantId = merchantId;
+  const m = (_accountsData || []).find((x) => x.id === merchantId) || (merchantsCache || []).find((x) => x.id === merchantId) || {};
+  
+  menu.innerHTML = `
+    <button onclick="openStatementModal('${m.id}'); closeGlobalMerchantMenu();">📊 كشف الحساب</button>
+    <button onclick="openInstallationModal('${m.id}'); closeGlobalMerchantMenu();">🔧 إضافة تركيب</button>
+    <button onclick="archiveMerchant('${m.id}'); closeGlobalMerchantMenu();">📦 أرشفة</button>
+    <button onclick="resetMerchantFromCard('${m.id}'); closeGlobalMerchantMenu();">🔄 إعادة تعيين المحاسبة</button>
+    <button onclick="viewMerchantAuditLogFromCard('${m.id}'); closeGlobalMerchantMenu();">📋 سجل العمليات</button>
+    <button onclick="deleteMerchant('${m.id}'); closeGlobalMerchantMenu();" style="color:var(--danger); font-weight:600;">🗑️ حذف التاجر</button>
+  `;
+
+  const btn = event.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  
+  menu.style.visibility = "hidden";
+  menu.style.display = "block";
+  const menuHeight = menu.offsetHeight || 250;
+  menu.style.visibility = "visible";
+  
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const spaceAbove = rect.top;
+  
+  let top;
+  if (spaceBelow < menuHeight && spaceAbove > spaceBelow) {
+    top = rect.top - menuHeight - 4;
+  } else {
+    top = rect.bottom + 4;
+  }
+  
+  let left = rect.left;
+  const menuWidth = menu.offsetWidth || 180;
+  if (left + menuWidth > window.innerWidth) {
+    left = window.innerWidth - menuWidth - 12;
+  }
+  
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
+
+  const closeHandler = (e) => {
+    if (!menu.contains(e.target) && e.target !== btn) {
+      menu.style.display = "none";
+      document.removeEventListener("click", closeHandler);
+    }
+  };
+  
+  setTimeout(() => {
+    document.addEventListener("click", closeHandler);
+  }, 0);
+}
+
+function closeGlobalMerchantMenu() {
+  const menu = $("globalMerchantMoreMenu");
+  if (menu) {
+    menu.style.display = "none";
   }
 }
+window.closeGlobalMerchantMenu = closeGlobalMerchantMenu;
+
 
 async function toggleMerchantCardStatus(id) {
   const m = merchantsCache.find((x) => x.id === id);
@@ -389,6 +444,9 @@ async function renderAccountsMerchantList() {
 // ===== Tab Activation =====
 
 async function onAccountsTabActivated(subTab) {
+  if (typeof closeGlobalMerchantMenu === "function") {
+    closeGlobalMerchantMenu();
+  }
   // Always re-fetch from Firestore when tab is activated
   _accountsDataDirty = true;
   _pricesLoaded = false;
