@@ -1646,7 +1646,7 @@ tr:hover td { background: var(--surface-hover); }
   transition: all 0.2s;
   box-shadow: var(--shadow-sm);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   height: 100%;

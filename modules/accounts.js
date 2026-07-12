@@ -229,12 +229,14 @@ function renderMerchantCard(m) {
           ${m.status === "archived" ? "إلغاء الأرشفة" : m.status === "active" ? "إيقاف" : "تفعيل"}
         </button>
         <div class="merchant-card-more">
-          <button class="merchant-card-action" onclick="toggleCardMoreMenu(event, '${m.id}')">•••</button>
+          <button class="merchant-card-action" onclick="toggleCardMoreMenu(event, '${m.id}')">المزيد ▼</button>
           <div class="merchant-card-more-menu" id="moreMenu_${m.id}">
             <button onclick="openStatementModal('${m.id}')">📊 كشف الحساب</button>
             <button onclick="openInstallationModal('${m.id}')">🔧 إضافة تركيب</button>
             <button onclick="archiveMerchant('${m.id}')">📦 أرشفة</button>
-            <button onclick="deleteMerchant('${m.id}')" style="color: var(--danger);">🗑️ حذف التاجر</button>
+            <button onclick="resetMerchantFromCard('${m.id}')">🔄 إعادة تعيين المحاسبة</button>
+            <button onclick="viewMerchantAuditLogFromCard('${m.id}')">📋 سجل العمليات</button>
+            <button onclick="deleteMerchant('${m.id}')" style="color:var(--danger); font-weight:600;">🗑️ حذف التاجر</button>
           </div>
         </div>
       </div>
@@ -338,6 +340,39 @@ async function deleteMerchant(id) {
   }
 }
 
+async function resetMerchantFromCard(merchantId) {
+  // Set the current merchant profile ID first so confirmResetMerchant knows which merchant to reset
+  currentMerchantProfileId = merchantId;
+  if (typeof confirmResetMerchant === "function") {
+    await confirmResetMerchant();
+  } else {
+    showToast("خطأ: وظيفة إعادة التعيين غير متوفرة", "error");
+  }
+  // Reset currentMerchantProfileId to null if profile is not open
+  currentMerchantProfileId = null;
+  
+  // Refresh accounts UI
+  markAccountsDirty();
+  if (typeof loadMerchants === "function") {
+    await loadMerchants();
+  }
+  _accountsData = merchantsCache;
+  _accountsDataDirty = false;
+  renderMerchantCards();
+}
+
+async function viewMerchantAuditLogFromCard(merchantId) {
+  if (typeof openMerchantProfile === "function" && typeof showAcctAuditLog === "function") {
+    await openMerchantProfile(merchantId);
+    await showAcctAuditLog();
+    const el = $("acctStatementTimeline");
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
+  } else {
+    showToast("خطأ: وظيفة سجل العمليات غير متوفرة", "error");
+  }
+}
 
 async function renderAccountsDashboard() {
   const container = $("accountsDashboard");
@@ -418,6 +453,8 @@ window.setMerchantFilter = setMerchantFilter;
 window.toggleCardMoreMenu = toggleCardMoreMenu;
 window.toggleMerchantCardStatus = toggleMerchantCardStatus;
 window.deleteMerchant = deleteMerchant;
+window.resetMerchantFromCard = resetMerchantFromCard;
+window.viewMerchantAuditLogFromCard = viewMerchantAuditLogFromCard;
 
 // ===== Debug helper =====
 window.debugAccounts = function() {
