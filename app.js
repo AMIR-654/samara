@@ -71,6 +71,11 @@ let gatewaysCache = [];
 
 const $ = (id) => document.getElementById(id);
 const categoriesBody = $("categoriesBody");
+
+// Toast stub — replaced by accounts.js with full implementation
+window.showToast = function(msg, type) {
+  console.log("[Toast " + (type || "info") + "]", msg);
+};
 const globalButtonsBody = $("globalButtonsBody");
 
 // ===== Firebase Status =====
@@ -107,6 +112,10 @@ document.querySelectorAll(".tab").forEach((tab) => {
     document.querySelectorAll(".tab-content").forEach((t) => t.classList.remove("active"));
     tab.classList.add("active");
     $(`tab-${tab.dataset.tab}`).classList.add("active");
+    // Activate accounts tab
+    if (tab.dataset.tab === "accounts") {
+      if (typeof onAccountsTabActivated === "function") onAccountsTabActivated();
+    }
   });
 });
 
@@ -1294,8 +1303,79 @@ async function handleLogin() {
   loginBtn.disabled = true;
   loginBtn.textContent = "جاري التحقق...";
 
-  const valid = await verifyCredentials(username, password);
-  if (valid) {
+  let loggedIn = false;
+  let fatalError = null;
+
+  try {
+    // Check if Firebase Auth is configured for this admin
+    const credDoc = await db.collection("settings").doc(ADMIN_CRED_DOC).get();
+    const credData = credDoc.exists ? credDoc.data() : {};
+    const firebaseEmail = credData.firebaseEmail || null;
+
+    const FALLBACK_ERRORS = ["auth/user-not-found", "auth/invalid-credential", "auth/invalid-email", "auth/internal-error"];
+    const FATAL_ERROR_CODES = {
+      "auth/network-request-failed": "خطأ في الاتصال بالإنترنت. تأكد من اتصالك وحاول مرة أخرى.",
+      "auth/too-many-requests": "تم حظر تسجيل الدخول مؤقتاً بسبب كثرة المحاولات. حاول مرة أخرى بعد دقائق.",
+      "auth/user-disabled": "حسابك موقوف. تواصل مع المسؤول.",
+      "auth/operation-not-allowed": "تسجيل الدخول غير متاح حالياً. حاول مرة أخرى لاحقاً.",
+    };
+
+    // Step 1: Try Firebase Auth first if email is configured
+    if (firebaseEmail) {
+      console.log("[Auth] Attempting Firebase Auth");
+      try {
+        await firebase.auth().signInWithEmailAndPassword(firebaseEmail, password);
+        const tokenResult = await firebase.auth().currentUser.getIdTokenResult();
+        if (tokenResult.claims.role === "admin") {
+          console.log("[Auth] Firebase Auth success");
+          loggedIn = true;
+          localStorage.setItem("auth_source", "firebase");
+          await db.collection("settings").doc(ADMIN_CRED_DOC).update({
+            lastLoginAt: Date.now(),
+            lastLoginMethod: "firebase",
+          }).catch(() => {});
+        } else {
+          console.warn("[Auth] Firebase user is not admin");
+          await firebase.auth().signOut();
+        }
+      } catch (firebaseErr) {
+        const code = firebaseErr.code || "";
+        console.warn("[Auth] Firebase Auth failed:", code);
+        if (FALLBACK_ERRORS.includes(code)) {
+          console.log("[Auth] Firebase user not found/invalid — trying Legacy");
+        } else if (FATAL_ERROR_CODES[code]) {
+          fatalError = FATAL_ERROR_CODES[code];
+        } else {
+          fatalError = "اسم المستخدم أو كلمة المرور غير صحيحة";
+        }
+      }
+    } else {
+      console.log("[Auth] No Firebase email — using Legacy");
+    }
+
+    // Step 2: Legacy fallback (only if no fatal error)
+    if (!loggedIn && !fatalError) {
+      console.log("[Auth] Attempting Legacy Auth");
+      const valid = await verifyCredentials(username, password);
+      if (valid) {
+        console.log("[Auth] Legacy Auth success");
+        loggedIn = true;
+        localStorage.setItem("auth_source", "legacy");
+        await db.collection("settings").doc(ADMIN_CRED_DOC).update({
+          lastLoginAt: Date.now(),
+          lastLoginMethod: "legacy",
+        }).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error("[Auth] Login error:", err.code || err.message);
+    fatalError = "اسم المستخدم أو كلمة المرور غير صحيحة";
+    if (firebase.auth().currentUser) {
+      await firebase.auth().signOut().catch(() => {});
+    }
+  }
+
+  if (loggedIn) {
     localStorage.setItem("admin_auth", "true");
     isAuthenticated = true;
     $("loginOverlay").classList.remove("open");
@@ -1304,7 +1384,6 @@ async function handleLogin() {
     $("loginPassword").value = "";
     errorEl.style.display = "none";
 
-    // Load all data after successful login
     await Promise.all([
       loadCategories(),
       loadGlobalButtons(),
@@ -1316,7 +1395,7 @@ async function handleLogin() {
       loadUpdateInfo(),
     ]);
   } else {
-    errorEl.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة";
+    errorEl.textContent = fatalError || "اسم المستخدم أو كلمة المرور غير صحيحة";
     errorEl.style.display = "block";
   }
 
@@ -1325,7 +1404,11 @@ async function handleLogin() {
 }
 
 function handleLogout() {
+  if (firebase.auth().currentUser) {
+    firebase.auth().signOut().catch(() => {});
+  }
   localStorage.removeItem("admin_auth");
+  localStorage.removeItem("auth_source");
   isAuthenticated = false;
   $("logoutBtn").style.display = "none";
   $("loginOverlay").classList.add("open");
@@ -1963,8 +2046,19 @@ window.deleteUpdate = async function () {
 async function init() {
   await loadAdminCredentials();
 
+  // Passive Firebase Auth listener — logs state, prevents non-admin sessions
+  firebase.auth().onAuthStateChanged((user) => {
+    if (user) {
+      user.getIdTokenResult().then((token) => {
+        if (token.claims.role !== "admin") {
+          console.warn("[Auth] Non-admin Firebase session — signing out");
+          firebase.auth().signOut().catch(() => {});
+        }
+      }).catch(() => {});
+    }
+  });
+
   if (!checkAuth()) {
-    // Not authenticated — only show login, don't load data
     return;
   }
 

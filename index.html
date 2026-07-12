@@ -52,6 +52,7 @@
       <button class="tab" data-tab="notifications">الإشعارات</button>
       <button class="tab" data-tab="updates">تحديثات التطبيق</button>
       <button class="tab" data-tab="gateways">البوابات</button>
+      <button class="tab" data-tab="accounts">الحسابات</button>
       <button class="tab" data-tab="clients">العملاء</button>
       <button class="tab" data-tab="settings">الإعدادات</button>
     </nav>
@@ -654,6 +655,163 @@
       </div>
     </section>
 
+    <!-- Accounts Tab -->
+    <section id="tab-accounts" class="tab-content">
+      <!-- ============================================================
+           MERCHANT LIST VIEW
+           ============================================================ -->
+      <div id="merchantListView" style="display:block;">
+        <div class="section-header">
+          <h2>نظام المحاسبة</h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="openMerchantModal()">+ إضافة تاجر</button>
+            <button class="btn btn-outline" onclick="openCardPriceModal()">⚙️ أسعار الكروت</button>
+          </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="merchant-filter-bar" id="merchantFilterBar">
+          <div class="merchant-filter-row">
+            <input type="text" class="merchant-search-input" id="merchantSearchInput"
+              placeholder="🔍 بحث بالاسم، رقم الهاتف، اسم المستخدم، أو كود التاجر..."
+              oninput="filterMerchantCards()" />
+            <button class="btn btn-sm btn-outline" onclick="openMerchantModal()" style="flex-shrink:0;">
+              + إضافة تاجر
+            </button>
+          </div>
+          <div class="filter-chips" id="merchantFilterChips"></div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-grid" id="merchantListStats" style="margin-bottom:16px;"></div>
+
+        <!-- Merchant Grid -->
+        <div id="merchantGrid" class="merchant-grid"></div>
+
+        <!-- Empty / Error states handled by JS -->
+      </div>
+
+      <!-- ============================================================
+           ACCOUNTING SCREEN VIEW
+           ============================================================ -->
+      <div id="accountingScreenView" style="display:none;">
+        <!-- Header -->
+        <div class="acct-header" id="acctHeader">
+          <div class="acct-header-top">
+            <button class="acct-back-btn" onclick="backToMerchantList()">→ العودة</button>
+            <div class="acct-avatar" id="acctAvatar">م</div>
+            <div class="acct-header-info">
+              <div class="acct-header-name">
+                <span id="acctName"></span>
+                <span id="acctStatusBadge" class="status-badge"></span>
+              </div>
+              <div class="acct-header-meta">
+                <span id="acctCode"></span>
+                <span id="acctPhone"></span>
+                <span id="acctFirebaseStatus"></span>
+                <span id="acctLastActivity"></span>
+              </div>
+            </div>
+            <div class="acct-header-right">
+              <div class="acct-month-nav" id="acctMonthNav">
+                <button class="acct-month-btn" onclick="changeAcctMonth(-1)">◀</button>
+                <span id="acctMonthLabel" style="font-weight:700;font-size:14px;min-width:100px;text-align:center;"></span>
+                <button class="acct-month-btn" onclick="changeAcctMonth(1)">▶</button>
+              </div>
+              <button class="acct-header-edit-btn" onclick="openMerchantModal(currentMerchantProfileId)">✏️ تعديل</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Body (skeleton / content) -->
+        <div id="acctBody">
+          <!-- Summary Dashboard -->
+          <div class="acct-summary" id="acctSummary"></div>
+
+          <!-- Accounting Table -->
+          <div class="acct-table-section" id="acctTableSection">
+            <div class="acct-table-header">
+              <span>كشف المحاسبة</span>
+              <span id="acctTableCount" style="font-size:11px;color:var(--text-muted);"></span>
+            </div>
+            <div class="acct-table-wrap">
+              <table class="acct-table">
+                <thead>
+                  <tr>
+                    <th style="text-align:right;">الفئة</th>
+                    <th style="text-align:center;">عدد الكروت</th>
+                    <th style="text-align:center;">إجمالي الفئة</th>
+                  </tr>
+                </thead>
+                <tbody id="acctTableBody"></tbody>
+                <tfoot id="acctTableTotals"></tfoot>
+              </table>
+            </div>
+          </div>
+
+          <!-- Settlement Panel -->
+          <div class="acct-settlement" id="acctSettlement"></div>
+
+          <!-- Account Statement -->
+          <div class="acct-statement-section" id="acctStatementSection">
+            <div class="acct-statement-header">
+              <span class="acct-statement-title">كشف الحساب</span>
+              <div class="acct-statement-filters">
+                <select id="stmtFilterType" onchange="renderAcctStatement()">
+                  <option value="">جميع المعاملات</option>
+                  <option value="card_inventory_added">عهدة</option>
+                  <option value="card_settlement">حساب كروت</option>
+                  <option value="cash_collection">استلام نقدي</option>
+                  <option value="installation">تركيب</option>
+                </select>
+                <button class="btn btn-sm btn-outline" onclick="printAcctStatement()">🖨️ طباعة</button>
+              </div>
+            </div>
+            <div id="acctStatementTimeline" class="acct-statement-timeline"></div>
+          </div>
+
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="acct-actions" id="acctActions">
+          <button class="acct-action-btn acct-action-collect" onclick="document.getElementById('settlementReceiveInput')?.focus()" style="flex:1;">
+            💾 تسجيل تحصيل نقدي
+          </button>
+          <div class="acct-action-more-wrap">
+            <button class="acct-action-btn acct-action-more" onclick="toggleAcctMoreMenu()">
+              ⋮
+            </button>
+            <div class="acct-action-more-menu" id="acctMoreMenu">
+              <button onclick="openStatementModal(currentMerchantProfileId)">📊 كشف الحساب الكامل</button>
+              <button onclick="openInstallationModal(currentMerchantProfileId)">🔧 إضافة تركيب</button>
+              <button onclick="openCardPriceModal()">⚙️ أسعار الكروت</button>
+              <button onclick="openMerchantModal(currentMerchantProfileId)">✏️ تعديل التاجر</button>
+              <button onclick="showAcctAuditLog()">📋 سجل العمليات</button>
+              <button onclick="confirmResetMerchant()" style="color:var(--danger);">🔄 إعادة تعيين التاجر</button>
+              <button onclick="toggleMerchantArchive()" style="color:var(--danger);">📦 أرشفة التاجر</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Details Modal -->
+    <div class="modal-overlay" id="instDetailsModal">
+      <div class="modal" style="max-width:600px;">
+        <div class="modal-header">
+          <h3>تفاصيل التركيبات</h3>
+          <button class="modal-close" onclick="document.getElementById('instDetailsModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h4>التركيبات النشطة</h4>
+            <button class="btn btn-sm btn-primary" onclick="openInstallationModal(currentMerchantProfileId)">+ إضافة تركيب</button>
+          </div>
+          <div id="instDetailsList" style="max-height: 400px; overflow-y: auto; display:flex; flex-direction:column; gap:8px;"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Items Modal -->
     <div class="modal-overlay" id="itemsModal">
       <div class="modal">
@@ -875,9 +1033,212 @@
       </div>
     </div>
 
+    <!-- Merchant Modal -->
+    <div class="modal-overlay" id="merchantModal">
+      <div class="modal" style="max-width:500px;">
+        <div class="modal-header">
+          <h3 id="merchantModalTitle">إضافة/تعديل تاجر</h3>
+          <button class="modal-close" onclick="document.getElementById('merchantModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="merchantForm" onsubmit="return saveMerchant(event)">
+            <input type="hidden" id="merchantId" />
+            <div class="form-group">
+              <label>الاسم <span class="required">*</span></label>
+              <input type="text" id="merchantName" required />
+            </div>
+            <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="form-group">
+                <label>رقم الهاتف <span class="required">*</span></label>
+                <input type="tel" id="merchantPhone" dir="ltr" required />
+              </div>
+              <div class="form-group">
+                <label>اسم المستخدم <span class="required">*</span></label>
+                <input type="text" id="merchantUsername" dir="ltr" required />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>كلمة المرور <span class="required" id="merchantPwdRequired">*</span></label>
+              <input type="password" id="merchantPassword" dir="ltr" />
+            </div>
+            <div class="form-group">
+              <label>العنوان</label>
+              <input type="text" id="merchantAddress" />
+            </div>
+            <div class="form-group">
+              <label>ملاحظات</label>
+              <textarea id="merchantNotes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius-xs);resize:vertical;font-size:14px;background:var(--surface);color:var(--text);"></textarea>
+            </div>
+            <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="form-group">
+                <label>الحالة</label>
+                <select id="merchantStatus">
+                  <option value="active">نشط</option>
+                  <option value="inactive">موقوف</option>
+                </select>
+              </div>
+              <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:8px;">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                  <input type="checkbox" id="merchantSupportsInstallations" />
+                  يدعم التركيبات
+                </label>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;">حفظ</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inventory Modal -->
+    <div class="modal-overlay" id="invModal">
+      <div class="modal" style="max-width:500px;">
+        <div class="modal-header">
+          <h3 id="invModalTitle">إضافة عهدة</h3>
+          <button class="modal-close" onclick="document.getElementById('invModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="invForm" onsubmit="return saveInventory(event)">
+            <input type="hidden" id="invMerchantId" />
+            <div id="invPriceEntries"></div>
+            <div style="display:flex;justify-content:space-between;padding:12px 0;margin-top:8px;border-top:2px solid var(--border);font-size:15px;">
+              <span>الإجمالي: <strong id="invTotalCards">0</strong> كرت</span>
+              <span style="font-weight:700;">بقيمة <strong id="invTotalValue">0 ج.م</strong></span>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;">حفظ العهدة</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settlement Modal -->
+    <div class="modal-overlay" id="settleModal">
+      <div class="modal" style="max-width:500px;">
+        <div class="modal-header">
+          <h3 id="settleModalTitle">حساب كروت</h3>
+          <button class="modal-close" onclick="document.getElementById('settleModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="settleForm" onsubmit="return saveSettlement(event)">
+            <input type="hidden" id="settleMerchantId" />
+            <div id="settlePriceEntries"></div>
+            <div style="display:flex;justify-content:space-between;padding:12px 0;margin-top:8px;border-top:2px solid var(--border);font-size:15px;">
+              <span>إجمالي الحساب:</span>
+              <span style="font-weight:700;font-size:20px;color:var(--danger);" id="settleTotal">0 ج.م</span>
+            </div>
+            <div id="settleDetails" style="font-size:13px;color:var(--text-muted);padding:8px 0;"></div>
+            <button type="submit" class="btn btn-danger" style="width:100%;justify-content:center;margin-top:8px;">تأكيد حساب الكروت</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Installation Modal -->
+    <div class="modal-overlay" id="instModal">
+      <div class="modal" style="max-width:500px;">
+        <div class="modal-header">
+          <h3 id="instModalTitle">إضافة تركيب</h3>
+          <button class="modal-close" onclick="document.getElementById('instModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="instForm" onsubmit="return saveInstallation(event)">
+            <input type="hidden" id="instMerchantId" />
+            <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="form-group">
+                <label>اسم العميل</label>
+                <input type="text" id="instCustomerName" required />
+              </div>
+              <div class="form-group">
+                <label>هاتف العميل</label>
+                <input type="tel" id="instCustomerPhone" dir="ltr" />
+              </div>
+            </div>
+            <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="form-group">
+                <label>المنطقة</label>
+                <input type="text" id="instRegion" />
+              </div>
+              <div class="form-group">
+                <label>نوع الاشتراك</label>
+                <input type="text" id="instSubscriptionType" placeholder="شهري / سنوي" />
+              </div>
+            </div>
+            <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="form-group">
+                <label>السعر (ج.م)</label>
+                <input type="number" id="instPrice" min="0" step="0.01" value="0" required />
+              </div>
+              <div class="form-group">
+                <label>التاريخ</label>
+                <input type="date" id="instDate" required />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>الحالة</label>
+              <select id="instStatus">
+                <option value="completed">مكتمل</option>
+                <option value="pending">معلق</option>
+                <option value="cancelled">ملغي</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>ملاحظات</label>
+              <textarea id="instNotes" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:var(--radius-xs);resize:vertical;font-size:14px;background:var(--surface);color:var(--text);"></textarea>
+            </div>
+            <button type="submit" class="btn btn-success" style="width:100%;justify-content:center;">حفظ التركيب</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Statement Modal -->
+    <div class="modal-overlay" id="stmtModal">
+      <div class="modal" style="max-width:700px;">
+        <div class="modal-header">
+          <h3 id="stmtModalTitle">كشف حساب</h3>
+          <button class="modal-close" onclick="document.getElementById('stmtModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body" style="max-height:80vh;overflow-y:auto;">
+          <div id="stmtLoading" class="loading">جاري تحميل كشف الحساب...</div>
+          <div id="stmtContent"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card Price Modal -->
+    <div class="modal-overlay" id="cardPriceModal">
+      <div class="modal" style="max-width:500px;">
+        <div class="modal-header">
+          <h3>إدارة أسعار الكروت</h3>
+          <button class="modal-close" onclick="document.getElementById('cardPriceModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div style="margin-bottom:12px;">
+            <button class="btn btn-sm btn-primary" onclick="addCardPriceRow()">+ إضافة فئة</button>
+          </div>
+          <div id="cardPriceList"></div>
+          <button class="btn btn-primary" onclick="saveCardPrices()" style="width:100%;justify-content:center;margin-top:12px;">حفظ الأسعار</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-storage-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-functions-compat.js"></script>
   <script src="app.js"></script>
+  <script src="modules/accountingMath.js"></script>
+  <script src="modules/audit.js"></script>
+  <script src="modules/merchants.js"></script>
+  <script src="modules/inventory.js"></script>
+  <script src="modules/settlements.js"></script>
+  <script src="modules/installations.js"></script>
+  <script src="modules/reports.js"></script>
+  <script src="modules/accounts.js"></script>
+  <script src="modules/merchantProfile.js"></script>
 </body>
 </html>

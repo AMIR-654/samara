@@ -1,0 +1,83 @@
+{
+  "collections": {
+    "merchants": {
+      "documents": [
+        {
+          "fields": {
+            "__name__": { "stringValue": "_test_merchant_legacy" },
+            "name": { "stringValue": "[TEST] تاجر Legacy فقط" },
+            "phone": { "stringValue": "01000000001" },
+            "username": { "stringValue": "test_merchant_legacy" },
+            "password": { "stringValue": "h_p20o5e" },
+            "status": { "stringValue": "active" },
+            "address": { "stringValue": "شارع الاختبار" },
+            "createdBy": { "stringValue": "test_script" },
+            "totalCards": { "integerValue": "10" },
+            "totalCardValue": { "integerValue": "5000" },
+            "currentBalance": { "integerValue": "3000" },
+            "totalSettlements": { "integerValue": "2000" },
+            "totalCollections": { "integerValue": "1000" },
+            "installationCount": { "integerValue": "2" }
+          }
+        },
+        {
+          "fields": {
+            "__name__": { "stringValue": "_test_merchant_firebase" },
+            "name": { "stringValue": "[TEST] تاجر Firebase" },
+            "phone": { "stringValue": "01000000002" },
+            "username": { "stringValue": "test_merchant_firebase" },
+            "password": { "stringValue": "h_4ovr9g" },
+            "email": { "stringValue": "merchant_m2@test.local" },
+            "status": { "stringValue": "active" },
+            "address": { "stringValue": "شارع Firebase" },
+            "createdBy": { "stringValue": "test_script" },
+            "totalCards": { "integerValue": "20" },
+            "totalCardValue": { "integerValue": "10000" },
+            "currentBalance": { "integerValue": "8000" },
+            "totalSettlements": { "integerValue": "5000" },
+            "totalCollections": { "integerValue": "2000" },
+            "installationCount": { "integerValue": "5" }
+          }
+        },
+        {
+          "fields": {
+            "__name__": { "stringValue": "_test_merchant_needs_sync" },
+            "name": { "stringValue": "[TEST] تاجر يحتاج مزامنة" },
+            "phone": { "stringValue": "01000000003" },
+            "username": { "stringValue": "test_merchant_needs_sync" },
+            "password": { "stringValue": "h_7w90ov" },
+            "status": { "stringValue": "active" },
+            "address": { "stringValue": "شارع المزامنة" },
+            "createdBy": { "stringValue": "test_script" },
+            "firebaseAuthUid": { "stringValue": "fake_uid_for_sync_test" },
+            "firebaseAuthStatus": { "stringValue": "needs_sync" },
+            "totalCards": { "integerValue": "5" },
+            "totalCardValue": { "integerValue": "2500" },
+            "currentBalance": { "integerValue": "1500" },
+            "totalSettlements": { "integerValue": "1000" },
+            "totalCollections": { "integerValue": "500" },
+            "installationCount": { "integerValue": "1" }
+          }
+        },
+        {
+          "fields": {
+            "__name__": { "stringValue": "_test_merchant_archived" },
+            "name": { "stringValue": "[TEST] تاجر مؤرشف" },
+            "phone": { "stringValue": "01000000004" },
+            "username": { "stringValue": "test_merchant_archived" },
+            "password": { "stringValue": "h_rjuvsh" },
+            "status": { "stringValue": "archived" },
+            "address": { "stringValue": "شارع الأرشيف" },
+            "createdBy": { "stringValue": "test_script" },
+            "totalCards": { "integerValue": "0" },
+            "totalCardValue": { "integerValue": "0" },
+            "currentBalance": { "integerValue": "0" },
+            "totalSettlements": { "integerValue": "0" },
+            "totalCollections": { "integerValue": "0" },
+            "installationCount": { "integerValue": "0" }
+          }
+        }
+      ]
+    }
+  }
+}
