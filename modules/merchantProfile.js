@@ -263,6 +263,7 @@ function getFilteredMonthlySummary() {
   let totalCardsAdded = 0;
   let totalCashCollected = 0;
   let totalInstallationsValue = 0;
+  let totalExpectedProfit = 0;
 
   const supportsInstallations = _profileMerchant && _profileMerchant.supportsInstallations !== false;
 
@@ -270,8 +271,18 @@ function getFilteredMonthlySummary() {
     if (!tx.date || tx.date < start || tx.date > end) return;
     if (tx.type === "card_inventory_added") {
       const meta = tx.metadata;
-      if (meta?.totalCards) totalCardsAdded += meta.totalCards;
-      else if (meta?.entries) totalCardsAdded += meta.entries.reduce((s, e) => s + (e.count || 0), 0);
+      if (meta?.entries) {
+        meta.entries.forEach((e) => {
+          const count = e.count || 0;
+          totalCardsAdded += count;
+          const priceDoc = _profilePrices.find((p) => p.id === e.category || p.category === e.category);
+          const sellingPrice = priceDoc?.sellingPrice || 0;
+          const merchantPrice = e.price || priceDoc?.merchantPrice || 0;
+          totalExpectedProfit += count * (sellingPrice - merchantPrice);
+        });
+      } else if (meta?.totalCards) {
+        totalCardsAdded += meta.totalCards;
+      }
     } else if (tx.type === "cash_collection") {
       totalCashCollected += Math.abs(tx.amount || 0);
     } else if (tx.type === "installation" && supportsInstallations) {
@@ -279,7 +290,14 @@ function getFilteredMonthlySummary() {
     }
   });
 
-  return { totalCardsAdded, totalCashCollected, totalInstallationsValue };
+  const totalDebits = _profileTransactions
+    .filter((tx) => tx.date && tx.date >= start && tx.date <= end && (tx.type === "card_inventory_added" || tx.type === "installation"))
+    .reduce((s, tx) => s + Math.abs(tx.amount || 0), 0);
+  const totalCredits = _profileTransactions
+    .filter((tx) => tx.date && tx.date >= start && tx.date <= end && (tx.type === "cash_collection" || tx.type === "card_settlement"))
+    .reduce((s, tx) => s + Math.abs(tx.amount || 0), 0);
+
+  return { totalCardsAdded, totalCashCollected, totalInstallationsValue, totalExpectedProfit, totalDebits, totalCredits };
 }
 
 // ===== Summary Dashboard =====
@@ -309,6 +327,27 @@ function renderAcctSummary() {
         <div class="acct-summary-label">قيمة التركيبات هذا الشهر</div>
       </div>`;
   }
+
+  summaryHtml += `
+    <div class="acct-summary-card" style="background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.15);">
+      <div class="acct-summary-icon" style="color:#f59e0b;">💰</div>
+      <div class="acct-summary-value warning">${stats.totalExpectedProfit.toLocaleString("ar-SA")} ج.م</div>
+      <div class="acct-summary-label">الربح المتوقع هذا الشهر</div>
+    </div>
+    <div class="acct-summary-card" style="background:rgba(99,102,241,0.05);border:1px solid rgba(99,102,241,0.15);cursor:pointer;" onclick="document.getElementById('acctStatementSection')?.scrollIntoView({behavior:'smooth'})">
+      <div class="acct-summary-icon" style="color:#6366f1;">📊</div>
+      <div style="display:flex;gap:12px;align-items:center;margin-top:2px;">
+        <div style="text-align:center;">
+          <div class="acct-summary-value positive" style="font-size:16px;">+${stats.totalDebits.toLocaleString("ar-SA")}</div>
+          <div class="acct-summary-label">مدين</div>
+        </div>
+        <div style="text-align:center;">
+          <div class="acct-summary-value negative" style="font-size:16px;">-${stats.totalCredits.toLocaleString("ar-SA")}</div>
+          <div class="acct-summary-label">دائن</div>
+        </div>
+      </div>
+      <div class="acct-summary-label" style="margin-top:2px;">كشف الحساب (اضغط للتفاصيل)</div>
+    </div>`;
 
   $("acctSummary").innerHTML = summaryHtml;
 }

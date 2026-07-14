@@ -1859,7 +1859,7 @@ tr:hover td { background: var(--surface-hover); }
   border-radius: var(--radius-xs);
   box-shadow: var(--shadow-lg);
   min-width: 180px;
-  z-index: 100;
+  z-index: 99999;
   overflow: hidden;
 }
 
@@ -2419,9 +2419,11 @@ tr:hover td { background: var(--surface-hover); }
 }
 
 .acct-action-more {
-  background: var(--text-muted);
+  background: var(--primary);
   min-width: 48px;
   flex: 0 0 auto;
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .acct-action-more-menu {
@@ -2435,7 +2437,7 @@ tr:hover td { background: var(--surface-hover); }
   border-radius: var(--radius-xs);
   box-shadow: var(--shadow-lg);
   min-width: 200px;
-  z-index: 100;
+  z-index: 99999;
   overflow: hidden;
 }
 

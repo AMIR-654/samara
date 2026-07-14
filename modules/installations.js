@@ -61,6 +61,13 @@ async function saveInstallation(e) {
     const instId = instRef.id;
 
     await db.runTransaction(async (transaction) => {
+      const merchantRef = db.collection("merchants").doc(merchantId);
+      const merchantSnap = await transaction.get(merchantRef);
+      const mData = merchantSnap.exists ? merchantSnap.data() : {};
+      const today = new Date();
+      const currentMonth = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0");
+      const isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
+
       transaction.set(instRef, { ...data, createdAt: now, updatedAt: now });
 
       const txnRef = db.collection("merchant_transactions").doc(merchantId).collection("items").doc();
@@ -71,17 +78,9 @@ async function saveInstallation(e) {
         createdAt: now, updatedAt: now,
       });
 
-      const merchantRef = db.collection("merchants").doc(merchantId);
-      const merchantSnap = await transaction.get(merchantRef);
-      const mData = merchantSnap.exists ? merchantSnap.data() : {};
-      const today = new Date();
-      const currentMonth = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0");
-      const isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
-
       transaction.update(merchantRef, {
         installationCount: firebase.firestore.FieldValue.increment(1),
         currentBalance: firebase.firestore.FieldValue.increment(price),
-        // Monthly denormalized stats (reset automatically when month changes)
         monthlyStatsPeriod: currentMonth,
         monthlyInstallationsValue: isSameMonth
           ? firebase.firestore.FieldValue.increment(price)
