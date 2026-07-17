@@ -9,81 +9,9 @@ async function loadMerchants() {
       .orderBy("createdAt", "desc")
       .get();
     merchantsCache = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderMerchants();
-    updateMerchantStats();
   } catch (err) {
     console.error("[Merchants] Load failed:", err);
   }
-}
-
-function renderMerchants() {
-  const body = $("merchantsBody");
-  if (!body) return;
-
-  const term = currentMerchantFilter.toLowerCase().trim();
-  let filtered = merchantsCache;
-  if (term) {
-    filtered = filtered.filter((m) =>
-      m.name?.toLowerCase().includes(term) ||
-      m.phone?.includes(term) ||
-      m.username?.toLowerCase().includes(term) ||
-      m.address?.toLowerCase().includes(term)
-    );
-  }
-
-  const showArchived = term.length > 0;
-  if (!showArchived) {
-    filtered = filtered.filter((m) => m.status !== "archived");
-  }
-
-  if (!filtered.length) {
-    body.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px;">لا يوجد تجار بعد</td></tr>';
-    return;
-  }
-
-  body.innerHTML = filtered.map((m) => {
-    const statusLabel = m.status === "active" ? "نشط" : m.status === "inactive" ? "موقوف" : "مؤرشف";
-    const statusClass = m.status === "active" ? "active" : m.status === "inactive" ? "disabled" : "unread";
-    const cardCount = m.totalCards ?? 0;
-    const installCount = m.installationCount ?? 0;
-    const lastTx = m.lastTransactionDate ? new Date(m.lastTransactionDate).toLocaleDateString("ar-SA") : "—";
-
-    return `
-      <tr>
-        <td><strong>${escapeHtml(m.name || "")}</strong></td>
-        <td dir="ltr" style="text-align:right;">${escapeHtml(m.phone || "")}</td>
-        <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
-        <td style="font-weight:600;">${(m.currentBalance ?? 0).toLocaleString("ar-SA")}</td>
-        <td>${cardCount.toLocaleString("ar-SA")}</td>
-        <td>${installCount.toLocaleString("ar-SA")}</td>
-        <td style="font-size:12px;color:var(--text-muted);">${lastTx}</td>
-        <td>
-          <div class="action-btns">
-            <button class="btn btn-sm btn-primary" onclick="openMerchantProfile('${m.id}')">إدارة</button>
-            <button class="btn btn-sm ${m.status === 'active' ? 'btn-outline' : 'btn-primary'}" onclick="toggleMerchantStatus('${m.id}')">${m.status === 'active' ? 'إيقاف' : 'تفعيل'}</button>
-            <button class="btn btn-sm btn-outline" onclick="archiveMerchant('${m.id}')">أرشفة</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join("");
-}
-
-function updateMerchantStats() {
-  const active = merchantsCache.filter((m) => m.status === "active");
-  const totalCards = active.reduce((s, m) => s + (m.totalCards ?? 0), 0);
-  const totalBalance = active.reduce((s, m) => s + (m.currentBalance ?? 0), 0);
-
-  const el = (id) => document.getElementById(id);
-  if (el("statsMerchants")) el("statsMerchants").textContent = active.length.toLocaleString("ar-SA");
-  if (el("statsTotalCards")) el("statsTotalCards").textContent = totalCards.toLocaleString("ar-SA");
-  if (el("statsTotalBalance")) el("statsTotalBalance").textContent = totalBalance.toLocaleString("ar-SA");
-  if (el("statsTotalMerchants")) el("statsTotalMerchants").textContent = merchantsCache.length.toLocaleString("ar-SA");
-}
-
-function filterMerchants(value) {
-  currentMerchantFilter = value;
-  renderMerchants();
 }
 
 async function openMerchantModal(merchant) {
@@ -183,6 +111,14 @@ async function saveMerchant(e) {
           performedBy: "admin", reason: "تحديث بيانات التاجر",
           timestamp: firebase.firestore.FieldValue.serverTimestamp(), date, time,
         });
+        createMerchantNotification({
+          merchantId: id, userId: oldData.username,
+          type: "merchant_updated",
+          title: "تحديث بيانات التاجر",
+          body: `تم تحديث بيانات التاجر ${data.name}`,
+          relatedDocumentId: id,
+          transaction,
+        });
       });
       showToast("✅ تم تحديث التاجر بنجاح", "success");
     } else {
@@ -193,6 +129,13 @@ async function saveMerchant(e) {
       data.createdBy = "admin";
       const ref = await db.collection("merchants").add(data);
       await recordAudit("create", "merchants", ref.id, null, data, "إضافة تاجر جديد");
+      createMerchantNotification({
+        merchantId: ref.id, userId: data.username,
+        type: "merchant_created",
+        title: "إنشاء تاجر جديد",
+        body: `تم إنشاء تاجر جديد: ${data.name}`,
+        relatedDocumentId: ref.id,
+      });
       showToast("✅ تم إضافة التاجر بنجاح", "success");
     }
     $("merchantModal").classList.remove("open");
@@ -216,6 +159,13 @@ async function toggleMerchantStatus(id) {
     });
     await recordAudit("update", "merchants", id, { status: m.status }, { status: newStatus },
       newStatus === "active" ? "تفعيل التاجر" : "إيقاف التاجر");
+    await createMerchantNotification({
+      merchantId: id, userId: m.username,
+      type: newStatus === "active" ? "merchant_restored" : "merchant_archived",
+      title: newStatus === "active" ? "تفعيل التاجر" : "إيقاف التاجر",
+      body: `تم ${newStatus === "active" ? "تفعيل" : "إيقاف"} التاجر ${m.name}`,
+      relatedDocumentId: id,
+    });
     await loadMerchants();
     showToast(newStatus === "active" ? "✅ تم تفعيل التاجر" : "✅ تم إيقاف التاجر", "success");
   } catch (err) {
@@ -233,6 +183,13 @@ async function archiveMerchant(id) {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
     await recordAudit("archive", "merchants", id, { status: m.status }, { status: "archived" }, "أرشفة التاجر");
+    await createMerchantNotification({
+      merchantId: id, userId: m.username,
+      type: "merchant_archived",
+      title: "أرشفة التاجر",
+      body: `تم أرشفة التاجر ${m.name}`,
+      relatedDocumentId: id,
+    });
     await loadMerchants();
     showToast(`✅ تم أرشفة "${m.name}" بنجاح`, "success");
   } catch (err) {
@@ -259,4 +216,3 @@ window.openMerchantModal = openMerchantModal;
 window.toggleMerchantPasswordVisibility = toggleMerchantPasswordVisibility;
 window.toggleMerchantStatus = toggleMerchantStatus;
 window.archiveMerchant = archiveMerchant;
-window.filterMerchants = filterMerchants;

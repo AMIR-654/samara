@@ -675,9 +675,6 @@
             <input type="text" class="merchant-search-input" id="merchantSearchInput"
               placeholder="🔍 بحث بالاسم، رقم الهاتف، اسم المستخدم، أو كود التاجر..."
               oninput="filterMerchantCards()" />
-            <button class="btn btn-sm btn-outline" onclick="openMerchantModal()" style="flex-shrink:0;">
-              + إضافة تاجر
-            </button>
           </div>
           <div class="filter-chips" id="merchantFilterChips"></div>
         </div>
@@ -764,6 +761,7 @@
                   <option value="card_settlement">حساب كروت</option>
                   <option value="cash_collection">استلام نقدي</option>
                   <option value="installation">تركيب</option>
+                  <option value="adjustment">تعديل يدوي</option>
                 </select>
                 <button class="btn btn-sm btn-outline" onclick="printAcctStatement()">🖨️ طباعة</button>
               </div>
@@ -1241,6 +1239,7 @@
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-functions-compat.js"></script>
   <script src="app.js"></script>
   <script src="modules/accountingMath.js"></script>
+  <script src="modules/merchantNotifications.js"></script>
   <script src="modules/audit.js"></script>
   <script src="modules/merchants.js"></script>
   <script src="modules/inventory.js"></script>

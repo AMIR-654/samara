@@ -99,9 +99,10 @@ async function saveInventory(e) {
   if (totalCards <= 0) { showToast("يجب إضافة كرت واحد على الأقل", "warning"); return; }
 
   try {
-    const now = firebase.firestore.FieldValue.serverTimestamp();
+    const now = Date.now();
     const date = new Date().toISOString().split("T")[0];
     const time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+    const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
 
     await db.runTransaction(async (transaction) => {
       const invRef = db.collection("merchant_inventory").doc(merchantId);
@@ -131,6 +132,30 @@ async function saveInventory(e) {
 
       const txnNotes = entries.map((e) => `${e.count} كارت فئة ${e.displayCategory || e.category}`).join("، ");
 
+      // Read current merchant balance for before/after tracking
+      const merchantSnap = await transaction.get(merchantRef);
+      const mData = merchantSnap.exists ? merchantSnap.data() : {};
+      const oldBalance = mData.currentBalance || 0;
+      const newBalance = oldBalance + totalValue;
+      const isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
+
+      const beforeState = {
+        currentBalance: mData.currentBalance || 0,
+        totalCards: mData.totalCards ?? 0,
+        totalCardValue: mData.totalCardValue ?? 0,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: mData.installationCount ?? 0,
+      };
+      const afterState = {
+        currentBalance: newBalance,
+        totalCards: newTotalCards,
+        totalCardValue: newTotalValue,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: mData.installationCount ?? 0,
+      };
+
       if (invDoc.exists) {
         transaction.update(invRef, { entries: newEntries, totalCards: newTotalCards, totalValue: newTotalValue, updatedAt: now });
       } else {
@@ -139,15 +164,25 @@ async function saveInventory(e) {
 
       transaction.update(merchantRef, {
         totalCards: newTotalCards, totalCardValue: newTotalValue,
-        currentBalance: firebase.firestore.FieldValue.increment(totalValue),
+        currentBalance: newBalance,
         updatedAt: now,
+        monthlyStatsPeriod: currentMonth,
+        monthlyCardsAdded: isSameMonth ? firebase.firestore.FieldValue.increment(totalCards) : totalCards,
       });
 
       const txnRef = db.collection("merchant_transactions").doc(merchantId).collection("items").doc();
       transaction.set(txnRef, {
-        type: "card_inventory_added", merchantId, amount: totalValue, date, time, createdBy: "admin",
+        id: txnRef.id,
+        type: "card_inventory_added", merchantId, amount: totalValue,
+        balanceBefore: oldBalance, balanceAfter: newBalance,
+        date, time, createdBy: "admin",
         notes: `إضافة كروت: ${txnNotes}`,
         priceSnapshot: getPriceSnapshot(), metadata: { entries, totalCards, totalValue }, createdAt: now, updatedAt: now,
+        operationId: txnRef.id,
+        operationType: "card_inventory_added",
+        before: beforeState,
+        after: afterState,
+        timestamp: now,
       });
 
       const auditRef = db.collection("merchant_audit_logs").doc();
@@ -158,11 +193,13 @@ async function saveInventory(e) {
         performedBy: "admin", reason: "إضافة كروت", timestamp: now, date, time,
       });
 
-      const notifRef = db.collection("merchant_notifications").doc();
-      transaction.set(notifRef, {
-        merchantId, type: "inventory_added", title: "إضافة كروت",
-        message: `تم إضافة ${totalCards} كرت بقيمة ${totalValue.toLocaleString("ar-SA")} ج.م`,
-        read: false, createdAt: now,
+      createMerchantNotification({
+        merchantId, userId: mData.username,
+        type: "inventory_added", title: "إضافة كروت",
+        body: `تم إضافة ${totalCards} كرت بقيمة ${totalValue.toLocaleString("ar-SA")} ج.م`,
+        relatedDocumentId: merchantId,
+        data: { entries, totalCards, totalValue },
+        transaction,
       });
     });
 

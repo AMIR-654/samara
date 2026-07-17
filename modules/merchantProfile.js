@@ -143,8 +143,6 @@ function startProfileListeners(merchantId) {
         renderAcctSummary();
         renderAcctStatement();
       }
-      // Denormalize monthly stats back to merchant doc for the list view
-      writeDenormalizedMonthlyStats(merchantId);
     }, (err) => console.warn("[Profile] Transactions listener:", err));
   _profileUnsubscribers.push(txnsUnsub);
 }
@@ -169,8 +167,8 @@ async function writeDenormalizedMonthlyStats(merchantId) {
     if (!tx.date || tx.date < `${currentMonth}-01` || tx.date > curEnd) return;
     if (tx.type === "card_inventory_added") {
       const meta = tx.metadata;
-      if (meta?.totalCards) cardsAdded += meta.totalCards;
-      else if (meta?.entries) cardsAdded += meta.entries.reduce((s, e) => s + (e.count || 0), 0);
+      if (meta?.entries) cardsAdded += meta.entries.reduce((s, e) => s + (e.count || 0), 0);
+      else if (meta?.totalCards) cardsAdded += meta.totalCards;
     } else if (tx.type === "cash_collection") {
       cashCollected += Math.abs(tx.amount || 0);
     } else if (tx.type === "installation" && supportsInstallations) {
@@ -288,14 +286,7 @@ function getFilteredMonthlySummary() {
   const acctStats = getAccountingStats();
   const totalExpectedProfit = acctStats.grandExpectedProfit;
 
-  const totalDebits = _profileTransactions
-    .filter((tx) => tx.date && tx.date >= start && tx.date <= end && (tx.type === "card_inventory_added" || tx.type === "installation"))
-    .reduce((s, tx) => s + Math.abs(tx.amount || 0), 0);
-  const totalCredits = _profileTransactions
-    .filter((tx) => tx.date && tx.date >= start && tx.date <= end && (tx.type === "cash_collection" || tx.type === "card_settlement"))
-    .reduce((s, tx) => s + Math.abs(tx.amount || 0), 0);
-
-  return { totalCardsAdded, totalCashCollected, totalInstallationsValue, totalExpectedProfit, totalDebits, totalCredits };
+  return { totalCardsAdded, totalCashCollected, totalInstallationsValue, totalExpectedProfit };
 }
 
 // ===== Summary Dashboard =====
@@ -330,21 +321,12 @@ function renderAcctSummary() {
     <div class="acct-summary-card" style="background:rgba(245,158,11,0.05);border:1px solid rgba(245,158,11,0.15);">
       <div class="acct-summary-icon" style="color:#f59e0b;">💰</div>
       <div class="acct-summary-value warning">${stats.totalExpectedProfit.toLocaleString("ar-SA")} ج.م</div>
-      <div class="acct-summary-label">الربح المتوقع هذا الشهر</div>
+      <div class="acct-summary-label">الربح المتوقع</div>
     </div>
-    <div class="acct-summary-card" style="background:rgba(99,102,241,0.05);border:1px solid rgba(99,102,241,0.15);cursor:pointer;" onclick="document.getElementById('acctStatementSection')?.scrollIntoView({behavior:'smooth'})">
-      <div class="acct-summary-icon" style="color:#6366f1;">📊</div>
-      <div style="display:flex;gap:12px;align-items:center;margin-top:2px;">
-        <div style="text-align:center;">
-          <div class="acct-summary-value positive" style="font-size:16px;">+${stats.totalDebits.toLocaleString("ar-SA")}</div>
-          <div class="acct-summary-label">مدين</div>
-        </div>
-        <div style="text-align:center;">
-          <div class="acct-summary-value negative" style="font-size:16px;">-${stats.totalCredits.toLocaleString("ar-SA")}</div>
-          <div class="acct-summary-label">دائن</div>
-        </div>
-      </div>
-      <div class="acct-summary-label" style="margin-top:2px;">كشف الحساب (اضغط للتفاصيل)</div>
+    <div class="acct-summary-card" style="background:rgba(16,185,129,0.1);border:2px solid rgba(16,185,129,0.3);">
+      <div class="acct-summary-icon" style="color:#10b981;">⚖️</div>
+      <div class="acct-summary-value positive">${(_profileMerchant.currentBalance || 0).toLocaleString("ar-SA")} ج.م</div>
+      <div class="acct-summary-label">الرصيد الحالي</div>
     </div>`;
 
   $("acctSummary").innerHTML = summaryHtml;
@@ -482,21 +464,21 @@ function renderAcctTable() {
   // Footer totals
   let liveCardsCount = stats.grandCardsCount;
   let liveCategoryTotal = stats.grandCategoryTotal;
-  let liveExpectedProfit = stats.grandExpectedProfit;
   if (editCategoryRow) {
     const row = stats.rows.find((r) => r.id === editCategoryRow);
     if (row) {
       const n = parseInt(editCategoryValue) || 0;
       liveCardsCount = stats.rows.reduce((s, r) => s + (r.id === editCategoryRow ? n : r.cardsCount), 0);
       liveCategoryTotal = stats.rows.reduce((s, r) => s + (r.id === editCategoryRow ? n * r.merchantPrice : r.rowTotal), 0);
-      liveExpectedProfit = stats.rows.reduce((s, r) => s + (r.id === editCategoryRow ? n * r.profitPerCard : r.categoryProfit), 0);
     }
   }
+
+  const balance = _profileMerchant ? (_profileMerchant.currentBalance || 0) : 0;
 
   tfoot.innerHTML = `
     <tr style="background:var(--surface-hover);border-top:2px solid var(--border);">
       <td colspan="4" style="padding:12px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
           <div style="text-align:center;padding:8px;background:var(--surface);border-radius:6px;">
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">إجمالي الكروت</div>
             <div id="grandCardsCountCell" style="font-weight:800;font-size:18px;color:var(--primary);">${liveCardsCount.toLocaleString("ar-SA")}</div>
@@ -509,9 +491,9 @@ function renderAcctTable() {
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">قيمة التركيبات</div>
             <div id="grandInstTotalCell" style="font-weight:800;font-size:18px;color:#8b5cf6;">${instTotal.toLocaleString("ar-SA")} ج.م</div>
           </div>
-          <div style="text-align:center;padding:8px;background:var(--surface);border-radius:6px;">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">الربح المتوقع</div>
-            <div id="grandProfitCell" style="font-weight:800;font-size:18px;color:var(--success);">${liveExpectedProfit.toLocaleString("ar-SA")} ج.م</div>
+          <div style="text-align:center;padding:8px;background:var(--surface);border-radius:6px;grid-column:span 3;border:2px solid rgba(16,185,129,0.2);">
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">الرصيد الحالي</div>
+            <div id="currentBalanceCell" style="font-weight:800;font-size:20px;color:#10b981;">${balance.toLocaleString("ar-SA")} ج.م</div>
           </div>
         </div>
       </td>
@@ -566,13 +548,11 @@ function handleInlineEditInput(rowId, val, prevCount, price) {
 
   let liveCardsCount = stats.grandCardsCount;
   let liveCategoryTotal = stats.grandCategoryTotal;
-  let liveExpectedProfit = stats.grandExpectedProfit;
 
   if (editCategoryRow) {
     const n = numVal;
     liveCardsCount = stats.rows.reduce((s, r) => s + (r.id === editCategoryRow ? n : r.cardsCount), 0);
     liveCategoryTotal = stats.rows.reduce((s, r) => s + (r.id === editCategoryRow ? n * r.merchantPrice : r.rowTotal), 0);
-    liveExpectedProfit = stats.rows.reduce((s, r) => s + (r.id === editCategoryRow ? n * r.profitPerCard : r.categoryProfit), 0);
   }
 
   const cardsCountCell = document.getElementById("grandCardsCountCell");
@@ -585,9 +565,10 @@ function handleInlineEditInput(rowId, val, prevCount, price) {
     grandTotalCell.textContent = `${liveCategoryTotal.toLocaleString("ar-SA")} ج.م`;
   }
 
-  const grandProfitCell = document.getElementById("grandProfitCell");
-  if (grandProfitCell) {
-    grandProfitCell.textContent = `${liveExpectedProfit.toLocaleString("ar-SA")} ج.م`;
+  // Update grand installations total cell
+  const grandInstTotalCell = document.getElementById("grandInstTotalCell");
+  if (grandInstTotalCell) {
+    grandInstTotalCell.textContent = `${instTotal.toLocaleString("ar-SA")} ج.م`;
   }
 }
 
@@ -620,29 +601,38 @@ async function saveInlineEdit(rowId) {
   const date = getLocalYearMonthDay();
   const time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
   const currentMonth = getLocalYearMonth();
-  const txnType = diff > 0 ? "card_inventory_added" : "card_settlement";
+  // Manual inventory corrections always use "adjustment" type, never card_settlement
+  const txnType = "adjustment";
   const txnNotes = diff > 0
-    ? `إضافة كروت: ${diff} كارت فئة ${row.category}`
-    : `حساب كروت: ${Math.abs(diff)} كارت فئة ${row.category}`;
+    ? `تعديل عهدة: إضافة ${diff} كارت فئة ${row.category}`
+    : `تعديل عهدة: خصم ${Math.abs(diff)} كارت فئة ${row.category}`;
 
   try {
     await db.runTransaction(async (transaction) => {
       const invRef = db.collection("merchant_inventory").doc(m.id);
       const merchantRef = db.collection("merchants").doc(m.id);
 
-      const [invDoc, merchantDoc] = await Promise.all([
+      const [invDoc, merchantDocSnap] = await Promise.all([
         transaction.get(invRef),
         transaction.get(merchantRef),
       ]);
 
-      // Build new entries
+      // Read current merchant data for balance tracking
+      const mData = merchantDocSnap.exists ? merchantDocSnap.data() : {};
+      const oldBalance = mData.currentBalance || 0;
+
+      // Build new entries using category name as canonical key
       const invData = invDoc.exists ? invDoc.data() : { entries: [] };
       const entriesMap = {};
       (invData.entries || []).forEach((e) => {
-        const key = _profilePrices.find((p) => p.category === e.category || p.id === e.category)?.id || e.category;
-        entriesMap[key] = e.count || 0;
+        const priceMatch = _profilePrices.find((p) => p.id === e.category || p.category === e.category);
+        const canonicalKey = priceMatch ? priceMatch.category : e.category;
+        entriesMap[canonicalKey] = e.count || 0;
       });
-      entriesMap[rowId] = newVal;
+      // Set the new value under the canonical category name
+      const priceMatch = _profilePrices.find((p) => p.id === rowId || p.category === rowId);
+      const canonicalRowCategory = priceMatch ? priceMatch.category : row.category;
+      entriesMap[canonicalRowCategory] = newVal;
 
       const newEntries = Object.entries(entriesMap)
         .filter(([, cnt]) => cnt > 0)
@@ -653,6 +643,9 @@ async function saveInlineEdit(rowId) {
         return s + e.count * p;
       }, 0);
 
+      const newBalance = oldBalance + (diff > 0 ? totalValueDiff : -totalValueDiff);
+      const isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
+
       // Inventory doc
       if (invDoc.exists) {
         transaction.update(invRef, { entries: newEntries, totalCards: newTotalCards, totalValue: newTotalValue, updatedAt: now });
@@ -660,35 +653,34 @@ async function saveInlineEdit(rowId) {
         transaction.set(invRef, { merchantId: m.id, entries: newEntries, totalCards: newTotalCards, totalValue: newTotalValue, createdAt: now, updatedAt: now });
       }
 
-      // Merchant doc + monthly stats
-      const mData = merchantDoc.exists ? merchantDoc.data() : {};
-      const isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
-      const merchantUpdate = {
+      // Merchant doc — only update counters, NOT totalSettlements (this is not a settlement)
+      const updateData = {
         totalCards: newTotalCards,
         totalCardValue: newTotalValue,
-        currentBalance: firebase.firestore.FieldValue.increment(diff > 0 ? totalValueDiff : -totalValueDiff),
+        currentBalance: newBalance,
         updatedAt: now,
-        monthlyStatsPeriod: currentMonth,
       };
       if (diff > 0) {
-        merchantUpdate.monthlyCardsAdded = isSameMonth
+        updateData.monthlyStatsPeriod = currentMonth;
+        updateData.monthlyCardsAdded = isSameMonth
           ? firebase.firestore.FieldValue.increment(diff)
           : diff;
-      } else {
-        merchantUpdate.totalSettlements = firebase.firestore.FieldValue.increment(totalValueDiff);
       }
-      transaction.update(merchantRef, merchantUpdate);
+      transaction.update(merchantRef, updateData);
 
-      // Transaction record
+      // Transaction record with full balance tracing
       const txnRef = db.collection("merchant_transactions").doc(m.id).collection("items").doc();
       transaction.set(txnRef, {
         type: txnType, merchantId: m.id,
         amount: diff > 0 ? totalValueDiff : -totalValueDiff,
+        balanceBefore: oldBalance,
+        balanceAfter: newBalance,
         date, time, createdBy: "admin", notes: txnNotes,
         priceSnapshot: getPriceSnapshot(),
         metadata: {
-          entries: [{ category: row.category, count: Math.abs(diff), price: merchantPrice }],
+          entries: [{ category: canonicalRowCategory, count: Math.abs(diff), price: merchantPrice }],
           totalCards: Math.abs(diff), totalValue: totalValueDiff,
+          adjustmentType: diff > 0 ? "inventory_added" : "inventory_removed",
         },
         createdAt: now, updatedAt: now,
       });
@@ -696,18 +688,20 @@ async function saveInlineEdit(rowId) {
       // Audit
       const auditRef = db.collection("merchant_audit_logs").doc();
       transaction.set(auditRef, {
-        action: "create", collection: txnType, docId: m.id,
-        oldValue: { count: oldVal }, newValue: { count: newVal },
+        action: "create", collection: "merchant_adjustment", docId: m.id,
+        oldValue: { count: oldVal, balance: oldBalance },
+        newValue: { count: newVal, balance: newBalance },
         performedBy: "admin", reason: txnNotes,
         timestamp: now, date, time,
       });
 
-      // Notification
-      const notifRef = db.collection("merchant_notifications").doc();
-      transaction.set(notifRef, {
-        merchantId: m.id, type: txnType,
-        title: diff > 0 ? "إضافة كروت" : "حساب كروت",
-        message: txnNotes, read: false, createdAt: now,
+      createMerchantNotification({
+        merchantId: m.id, userId: mData.username,
+        type: txnType, title: "تعديل عهدة",
+        body: txnNotes,
+        relatedDocumentId: m.id,
+        data: { category: canonicalRowCategory, oldCount: oldVal, newCount: newVal, diff, price: merchantPrice },
+        transaction,
       });
     });
 
@@ -778,43 +772,71 @@ async function saveProfileSettlement() {
   try {
     await db.runTransaction(async (transaction) => {
       const merchantRef = db.collection("merchants").doc(m.id);
-      const merchantDoc = await transaction.get(merchantRef);
-      const mData = merchantDoc.exists ? merchantDoc.data() : {};
+      const merchantSnap = await transaction.get(merchantRef);
+      const mData = merchantSnap.exists ? merchantSnap.data() : {};
+      const oldBalance = mData.currentBalance || 0;
+      const newBalance = oldBalance - receive;
+      const oldCollections = mData.totalCollections || 0;
       const isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
 
+      const beforeState = {
+        currentBalance: mData.currentBalance || 0,
+        totalCards: mData.totalCards ?? 0,
+        totalCardValue: mData.totalCardValue ?? 0,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: mData.installationCount ?? 0,
+      };
+      const afterState = {
+        currentBalance: newBalance,
+        totalCards: mData.totalCards ?? 0,
+        totalCardValue: mData.totalCardValue ?? 0,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: oldCollections + receive,
+        installationCount: mData.installationCount ?? 0,
+      };
+
       transaction.update(merchantRef, {
-        totalCollections: firebase.firestore.FieldValue.increment(receive),
-        currentBalance: firebase.firestore.FieldValue.increment(-receive),
+        totalCollections: oldCollections + receive,
+        currentBalance: newBalance,
         updatedAt: now,
         monthlyStatsPeriod: currentMonth,
         monthlyCashCollected: isSameMonth
-          ? firebase.firestore.FieldValue.increment(receive)
+          ? (mData.monthlyCashCollected || 0) + receive
           : receive,
       });
 
       const txnRef = db.collection("merchant_transactions").doc(m.id).collection("items").doc();
       transaction.set(txnRef, {
+        id: txnRef.id,
         type: "cash_collection", merchantId: m.id, amount: -receive,
+        balanceBefore: oldBalance, balanceAfter: newBalance,
         date, time, createdBy: "admin",
         notes: `استلام نقدي: ${receive.toLocaleString("ar-SA")} ج.م`,
-        metadata: { receiveAmount: receive, balanceBefore: m.currentBalance },
+        metadata: { receiveAmount: receive },
         createdAt: now, updatedAt: now,
+        operationId: txnRef.id,
+        operationType: "cash_collection",
+        before: beforeState,
+        after: afterState,
+        timestamp: Date.now(),
       });
 
       const auditRef = db.collection("merchant_audit_logs").doc();
       transaction.set(auditRef, {
         action: "create", collection: "merchant_transactions", docId: txnRef.id,
-        oldValue: { totalCollections: m.totalCollections || 0 },
-        newValue: { totalCollections: (m.totalCollections || 0) + receive },
+        oldValue: { totalCollections: oldCollections },
+        newValue: { totalCollections: oldCollections + receive },
         performedBy: "admin", reason: "تحصيل نقدي", timestamp: now, date, time,
       });
 
-      const notifRef = db.collection("merchant_notifications").doc();
-      transaction.set(notifRef, {
-        merchantId: m.id, type: "cash_collection",
-        title: "استلام نقدي",
-        message: `تم استلام ${receive.toLocaleString("ar-SA")} ج.م`,
-        read: false, createdAt: now,
+      createMerchantNotification({
+        merchantId: m.id, userId: mData.username,
+        type: "cash_collection", title: "استلام نقدي",
+        body: `تم استلام ${receive.toLocaleString("ar-SA")} ج.م`,
+        relatedDocumentId: m.id,
+        data: { receiveAmount: receive },
+        transaction,
       });
     });
 
@@ -938,6 +960,18 @@ function renderAcctInstallations() {
     </div>`).join("");
 }
 
+// ===== Refresh profile (called after save/delete operations) =====
+
+function refreshMerchantProfile() {
+  if (!_profileMerchant) return;
+  renderAcctHeader();
+  renderAcctSummary();
+  renderAcctTable();
+  renderAcctSettlement();
+  renderAcctStatement();
+  renderAcctInstallations();
+}
+
 // ===== Refresh (month change) =====
 
 function refreshAccountingScreen() {
@@ -964,11 +998,10 @@ async function confirmResetMerchant() {
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
 
-    const invSnap = await db.collection("merchant_inventory").get();
-    invSnap.docs.forEach((d) => {
-      if (d.data().merchantId === id)
-        batch.update(d.ref, { entries: [], totalCards: 0, totalValue: 0, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-    });
+    const invDoc = await db.collection("merchant_inventory").doc(id).get();
+    if (invDoc.exists) {
+      batch.update(invDoc.ref, { entries: [], totalCards: 0, totalValue: 0, updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    }
 
     const instSnap = await db.collection("merchant_installations").where("merchantId", "==", id).get();
     instSnap.docs.forEach((d) => batch.delete(d.ref));
@@ -976,6 +1009,16 @@ async function confirmResetMerchant() {
     const txSnap = await db.collection("merchant_transactions").doc(id).collection("items").get();
     txSnap.docs.forEach((d) => batch.delete(d.ref));
 
+    const resetMerchant = _profileMerchant?.username
+      ? _profileMerchant
+      : merchantsCache?.find((m) => m.id === id);
+    createMerchantNotification({
+      merchantId: id, userId: resetMerchant?.username || "all",
+      type: "merchant_reset",
+      title: "إعادة تعيين بيانات التاجر",
+      body: "تم إعادة تعيين جميع البيانات المحاسبية (العهدة، التركيبات، المعاملات)",
+      relatedDocumentId: id,
+    });
     await batch.commit();
     showToast("✅ تم إعادة تعيين التاجر", "success");
     await loadMerchants();
@@ -1013,6 +1056,13 @@ async function toggleMerchantArchive() {
   try {
     await db.collection("merchants").doc(m.id).update({ status: "archived", updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
     await recordAudit("archive", "merchants", m.id, { status: m.status }, { status: "archived" }, "أرشفة");
+    createMerchantNotification({
+      merchantId: m.id, userId: m.username,
+      type: "merchant_archived",
+      title: "أرشفة التاجر",
+      body: `تم أرشفة التاجر ${m.name}`,
+      relatedDocumentId: m.id,
+    });
     await loadMerchants();
     showToast(`✅ تم أرشفة "${m.name}"`, "success");
     backToMerchantList();
@@ -1038,6 +1088,7 @@ window.openMerchantProfile = openMerchantProfile;
 window.backToMerchantList = backToMerchantList;
 window.changeAcctMonth = changeAcctMonth;
 window.refreshAccountingScreen = refreshAccountingScreen;
+window.refreshMerchantProfile = refreshMerchantProfile;
 window.saveProfileSettlement = saveProfileSettlement;
 window.updateAcctSettlementHint = updateAcctSettlementHint;
 window.toggleAcctMoreMenu = toggleAcctMoreMenu;

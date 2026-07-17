@@ -28,7 +28,10 @@ function openSettlementModal(merchantId) {
     <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);">
       <span style="flex:1;font-weight:600;">فئة ${p.category}</span>
       <span style="font-size:12px;color:var(--text-muted);">السعر: ${p.merchantPrice} ج.م</span>
-      <input type="number" min="0" value="0" class="settle-count" data-category="${p.category}" data-price="${p.merchantPrice}"
+      <input type="number" min="0" value="0" class="settle-count"
+        data-category-id="${p.id}"
+        data-category="${p.category}"
+        data-price="${p.merchantPrice}"
         style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:var(--radius-xs);font-size:14px;text-align:center;background:var(--surface);color:var(--text);" />
     </div>
   `).join("");
@@ -78,10 +81,12 @@ async function saveSettlement(e) {
     const price = parseFloat(input.dataset.price) || 0;
     if (count < 0) { showToast("عدد الكروت لا يمكن أن يكون سالباً", "warning"); return; }
     if (count <= 0) return;
-    if (!input.dataset.category) { showToast("فئة الكرت غير محددة", "warning"); return; }
+    // Resolve canonical key: prefer doc ID, fall back to category name
+    const categoryKey = input.dataset.categoryId || input.dataset.category;
+    if (!categoryKey) { showToast("فئة الكرت غير محددة", "warning"); return; }
     const total = count * price;
     grandTotal += total;
-    entries.push({ category: input.dataset.category, count, price, total });
+    entries.push({ category: categoryKey, displayCategory: input.dataset.category, count, price, total });
   });
 
   if (!entries.length) { showToast("يرجى إدخال عدد الكروت المطلوب حسابها", "warning"); return; }
@@ -90,9 +95,10 @@ async function saveSettlement(e) {
   if (!confirm(`تأكيد حساب الكروت بقيمة ${grandTotal.toLocaleString("ar-SA")} ج.م؟`)) return;
 
   try {
-    const now = firebase.firestore.FieldValue.serverTimestamp();
+    const now = Date.now();
     const date = new Date().toISOString().split("T")[0];
     const time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+    const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
 
     await db.runTransaction(async (transaction) => {
       const invRef = db.collection("merchant_inventory").doc(merchantId);
@@ -105,42 +111,81 @@ async function saveSettlement(e) {
       const currentEntries = invData.entries || [];
 
       entries.forEach((e) => {
-        const invEntry = currentEntries.find((i) => i.category === e.category);
+        // Match by doc ID, category name, or displayCategory
+        const invEntry = currentEntries.find((i) =>
+          i.category === e.category || i.category === e.displayCategory
+        );
         const available = invEntry ? invEntry.count : 0;
-        if (available < e.count) throw new Error(`المخزون غير كافٍ لفئة "${e.category}". المتوفر: ${available}، المطلوب: ${e.count}`);
+        if (available < e.count) throw new Error(`المخزون غير كافٍ لفئة "${e.displayCategory || e.category}". المتوفر: ${available}، المطلوب: ${e.count}`);
       });
 
       const mergedMap = {};
-      const oldMap = {};
       currentEntries.forEach((e) => {
         mergedMap[e.category] = (mergedMap[e.category] || 0) + (e.count || 0);
-        oldMap[e.category] = (oldMap[e.category] || 0) + (e.count || 0);
       });
       entries.forEach((e) => {
-        mergedMap[e.category] = Math.max(0, (mergedMap[e.category] || 0) - e.count);
+        // Deduct using the matched key (may be doc ID or category name)
+        const matchedKey = Object.keys(mergedMap).find((k) =>
+          k === e.category || k === e.displayCategory
+        );
+        if (matchedKey) {
+          mergedMap[matchedKey] = Math.max(0, (mergedMap[matchedKey] || 0) - e.count);
+        }
       });
 
       const newEntries = Object.entries(mergedMap).filter(([, count]) => count > 0).map(([category, count]) => ({ category, count }));
       const newTotalCards = newEntries.reduce((s, e) => s + e.count, 0);
       const newTotalValue = newEntries.reduce((s, e) => {
-        const price = inventoryCardPrices.find((p) => p.category === e.category)?.merchantPrice || 0;
-        return s + e.count * price;
+        const priceDoc = inventoryCardPrices.find((p) => p.id === e.category || p.category === e.category);
+        return s + e.count * (priceDoc?.merchantPrice || 0);
       }, 0);
 
       transaction.update(invRef, { entries: newEntries, totalCards: newTotalCards, totalValue: newTotalValue, updatedAt: now });
 
+      // Read current merchant balance for before/after tracking
+      const merchantSnap = await transaction.get(merchantRef);
+      const mData = merchantSnap.exists ? merchantSnap.data() : {};
+      const oldBalance = mData.currentBalance || 0;
+      const newBalance = oldBalance - grandTotal;
+      const oldTotalSettlements = mData.totalSettlements || 0;
+
+      const beforeState = {
+        currentBalance: mData.currentBalance || 0,
+        totalCards: mData.totalCards ?? 0,
+        totalCardValue: mData.totalCardValue ?? 0,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: mData.installationCount ?? 0,
+      };
+      const afterState = {
+        currentBalance: newBalance,
+        totalCards: newTotalCards,
+        totalCardValue: newTotalValue,
+        totalSettlements: oldTotalSettlements + grandTotal,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: mData.installationCount ?? 0,
+      };
+
       transaction.update(merchantRef, {
         totalCards: newTotalCards, totalCardValue: newTotalValue,
-        totalSettlements: firebase.firestore.FieldValue.increment(grandTotal),
-        currentBalance: firebase.firestore.FieldValue.increment(-grandTotal),
+        totalSettlements: oldTotalSettlements + grandTotal,
+        currentBalance: newBalance,
         updatedAt: now,
       });
 
       const txnRef = db.collection("merchant_transactions").doc(merchantId).collection("items").doc();
       transaction.set(txnRef, {
-        type: "card_settlement", merchantId, amount: -grandTotal, date, time, createdBy: "admin",
-        notes: `حساب كروت: ${entries.map((e) => `${e.count} من فئة ${e.category}`).join("، ")}`,
+        id: txnRef.id,
+        type: "card_settlement", merchantId, amount: -grandTotal,
+        balanceBefore: oldBalance, balanceAfter: newBalance,
+        date, time, createdBy: "admin",
+        notes: `حساب كروت: ${entries.map((e) => `${e.count} من فئة ${e.displayCategory || e.category}`).join("، ")}`,
         priceSnapshot: getPriceSnapshot(), metadata: { entries, grandTotal }, createdAt: now, updatedAt: now,
+        operationId: txnRef.id,
+        operationType: "card_settlement",
+        before: beforeState,
+        after: afterState,
+        timestamp: now,
       });
 
       const auditRef = db.collection("merchant_audit_logs").doc();
@@ -151,11 +196,13 @@ async function saveSettlement(e) {
         performedBy: "admin", reason: "حساب كروت", timestamp: now, date, time,
       });
 
-      const notifRef = db.collection("merchant_notifications").doc();
-      transaction.set(notifRef, {
-        merchantId, type: "settlement", title: "حساب كروت",
-        message: `تم حساب كروت بقيمة ${grandTotal.toLocaleString("ar-SA")} ج.م`,
-        read: false, createdAt: now,
+      createMerchantNotification({
+        merchantId, userId: mData.username,
+        type: "settlement", title: "حساب كروت",
+        body: `تم حساب كروت بقيمة ${grandTotal.toLocaleString("ar-SA")} ج.م`,
+        relatedDocumentId: merchantId,
+        data: { entries, grandTotal },
+        transaction,
       });
     });
 

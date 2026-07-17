@@ -64,23 +64,51 @@ async function saveInstallation(e) {
       const merchantRef = db.collection("merchants").doc(merchantId);
       const merchantSnap = await transaction.get(merchantRef);
       const mData = merchantSnap.exists ? merchantSnap.data() : {};
-      const today = new Date();
-      const currentMonth = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0");
+      const oldBalance = mData.currentBalance || 0;
+      const newBalance = oldBalance + price;
+      // Use installation date for monthly stats period, not current date
+      const instDate = new Date(date + "T00:00:00");
+      const currentMonth = instDate.getFullYear() + "-" + String(instDate.getMonth() + 1).padStart(2, "0");
       const isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
+
+      const beforeState = {
+        currentBalance: mData.currentBalance || 0,
+        totalCards: mData.totalCards ?? 0,
+        totalCardValue: mData.totalCardValue ?? 0,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: mData.installationCount ?? 0,
+      };
+      const afterState = {
+        currentBalance: newBalance,
+        totalCards: mData.totalCards ?? 0,
+        totalCardValue: mData.totalCardValue ?? 0,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: (mData.installationCount || 0) + 1,
+      };
 
       transaction.set(instRef, { ...data, createdAt: now, updatedAt: now });
 
       const txnRef = db.collection("merchant_transactions").doc(merchantId).collection("items").doc();
       transaction.set(txnRef, {
-        type: "installation", merchantId, amount: price, date, time, createdBy: "admin",
+        id: txnRef.id,
+        type: "installation", merchantId, amount: price,
+        balanceBefore: oldBalance, balanceAfter: newBalance,
+        date, time, createdBy: "admin",
         notes: `تركيب: ${customerName} - ${data.region || "بدون منطقة"}${data.subscriptionType ? " (" + data.subscriptionType + ")" : ""}`,
         priceSnapshot: [], metadata: { installationId: instId, customerName, region: data.region, subscriptionType: data.subscriptionType },
         createdAt: now, updatedAt: now,
+        operationId: txnRef.id,
+        operationType: "installation",
+        before: beforeState,
+        after: afterState,
+        timestamp: Date.now(),
       });
 
       transaction.update(merchantRef, {
-        installationCount: firebase.firestore.FieldValue.increment(1),
-        currentBalance: firebase.firestore.FieldValue.increment(price),
+        installationCount: (mData.installationCount || 0) + 1,
+        currentBalance: newBalance,
         monthlyStatsPeriod: currentMonth,
         monthlyInstallationsValue: isSameMonth
           ? firebase.firestore.FieldValue.increment(price)
@@ -95,11 +123,13 @@ async function saveInstallation(e) {
         performedBy: "admin", reason: "إضافة تركيب", timestamp: now, date, time,
       });
 
-      const notifRef = db.collection("merchant_notifications").doc();
-      transaction.set(notifRef, {
-        merchantId, type: "installation", title: "تركيب جديد",
-        message: `تم إضافة تركيب ${customerName ? "لـ " + customerName : ""} بقيمة ${price.toLocaleString("ar-SA")} ج.م`,
-        read: false, createdAt: now,
+      createMerchantNotification({
+        merchantId, userId: mData.username,
+        type: "installation", title: "تركيب جديد",
+        body: `تم إضافة تركيب ${customerName ? "لـ " + customerName : ""} بقيمة ${price.toLocaleString("ar-SA")} ج.م`,
+        relatedDocumentId: instId,
+        data: { customerName, region: data.region, subscriptionType: data.subscriptionType, price },
+        transaction,
       });
     });
 
@@ -124,15 +154,75 @@ async function deleteInstallation(id) {
     const instData = instDoc.data();
     const merchantId = instData.merchantId;
     const price = instData.price || 0;
+    const now = Date.now();
+    const date = new Date().toISOString().split("T")[0];
+    const time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
 
     await db.runTransaction(async (transaction) => {
+      const merchantRef = db.collection("merchants").doc(merchantId);
+      const merchantSnap = await transaction.get(merchantRef);
+      const mData = merchantSnap.exists ? merchantSnap.data() : {};
+      const oldBalance = mData.currentBalance || 0;
+      const newBalance = oldBalance - price;
+      const newInstallationCount = Math.max(0, (mData.installationCount || 0) - 1);
+      const instDate = new Date(instData.date + "T00:00:00");
+      const currentMonth = instDate.getFullYear() + "-" + String(instDate.getMonth() + 1).padStart(2, "0");
+      const isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
+
+      const beforeState = {
+        currentBalance: mData.currentBalance || 0,
+        totalCards: mData.totalCards ?? 0,
+        totalCardValue: mData.totalCardValue ?? 0,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: mData.installationCount ?? 0,
+      };
+      const afterState = {
+        currentBalance: newBalance,
+        totalCards: mData.totalCards ?? 0,
+        totalCardValue: mData.totalCardValue ?? 0,
+        totalSettlements: mData.totalSettlements ?? 0,
+        totalCollections: mData.totalCollections ?? 0,
+        installationCount: newInstallationCount,
+      };
+
       transaction.delete(instDoc.ref);
-      if (merchantId) {
-        transaction.update(db.collection("merchants").doc(merchantId), {
-          installationCount: firebase.firestore.FieldValue.increment(-1),
-          currentBalance: firebase.firestore.FieldValue.increment(-price),
-        });
-      }
+
+      transaction.update(merchantRef, {
+        installationCount: newInstallationCount,
+        currentBalance: newBalance,
+        updatedAt: now,
+        monthlyStatsPeriod: currentMonth,
+        monthlyInstallationsValue: isSameMonth
+          ? Math.max(0, (mData.monthlyInstallationsValue || 0) - price)
+          : (mData.monthlyInstallationsValue || 0),
+      });
+
+      const txnRef = db.collection("merchant_transactions").doc(merchantId).collection("items").doc();
+      transaction.set(txnRef, {
+        id: txnRef.id,
+        type: "adjustment", merchantId, amount: -price,
+        balanceBefore: oldBalance, balanceAfter: newBalance,
+        date, time, createdBy: "admin",
+        notes: `حذف تركيب: ${instData.customerName || "بدون اسم"}${instData.region ? " - " + instData.region : ""}`,
+        metadata: { deletedInstallationId: id, customerName: instData.customerName, region: instData.region },
+        createdAt: now, updatedAt: now,
+        operationId: txnRef.id,
+        operationType: "installation_deleted",
+        before: beforeState,
+        after: afterState,
+        timestamp: Date.now(),
+      });
+
+      createMerchantNotification({
+        merchantId, userId: mData.username,
+        type: "installation_deleted",
+        title: "حذف تركيب",
+        body: `تم حذف تركيب ${instData.customerName || ""} بقيمة ${price.toLocaleString("ar-SA")} ج.م`,
+        relatedDocumentId: id,
+        data: { customerName: instData.customerName, price },
+        transaction,
+      });
     });
 
     await recordAudit("delete", "merchant_installations", id, null, null, "حذف تركيب");
