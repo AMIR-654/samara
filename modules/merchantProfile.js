@@ -520,8 +520,10 @@ async function saveInlineEdit(rowId) {
   if (isNaN(diff)) { showToast("يرجى إدخال عدد صحيح", "warning"); return; }
   if (diff === 0) { cancelInlineEdit(); return; }
 
-  const oldVal = row.cardsCount;
-  var newVal = oldVal + diff;
+  // oldVal/newVal will be computed from Firestore inside the transaction to avoid stale-cache bugs.
+  // We declare them here so audit log and notification can use the accurate values.
+  let oldVal = row.cardsCount; // fallback — overwritten inside transaction
+  let newVal = oldVal + diff;  // fallback — overwritten inside transaction
 
   const priceDoc = _profilePrices.find((p) => p.id === rowId || p.category === row.category);
   if (!priceDoc) { showToast("فئة السعر غير متوفرة", "error"); return; }
@@ -560,10 +562,14 @@ async function saveInlineEdit(rowId) {
         const canonicalKey = priceMatch ? priceMatch.id : e.category;
         entriesMap[canonicalKey] = e.count || 0;
       });
-      // Set the new value under the canonical doc ID
+      // Add diff to the Firestore value (not cache), ensuring additive behavior
       const priceMatch = _profilePrices.find((p) => p.id === rowId || p.category === rowId);
       const canonicalRowCategory = priceMatch ? priceMatch.id : row.id;
-      entriesMap[canonicalRowCategory] = newVal;
+      // Read the real Firestore count for this category (not the stale cache)
+      const firestoreCurrentCount = entriesMap[canonicalRowCategory] || 0;
+      oldVal = firestoreCurrentCount;            // accurate oldVal from Firestore
+      entriesMap[canonicalRowCategory] = firestoreCurrentCount + diff;
+      newVal = entriesMap[canonicalRowCategory]; // accurate newVal from Firestore
 
       const newEntries = Object.entries(entriesMap)
         .filter(([, cnt]) => cnt > 0)
