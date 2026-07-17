@@ -552,17 +552,17 @@ async function saveInlineEdit(rowId) {
       const mData = merchantDocSnap.exists ? merchantDocSnap.data() : {};
       const oldBalance = mData.currentBalance || 0;
 
-      // Build new entries using category name as canonical key
+      // Build new entries using doc ID as canonical key
       const invData = invDoc.exists ? invDoc.data() : { entries: [] };
       const entriesMap = {};
       (invData.entries || []).forEach((e) => {
         const priceMatch = _profilePrices.find((p) => p.id === e.category || p.category === e.category);
-        const canonicalKey = priceMatch ? priceMatch.category : e.category;
+        const canonicalKey = priceMatch ? priceMatch.id : e.category;
         entriesMap[canonicalKey] = e.count || 0;
       });
-      // Set the new value under the canonical category name
+      // Set the new value under the canonical doc ID
       const priceMatch = _profilePrices.find((p) => p.id === rowId || p.category === rowId);
-      const canonicalRowCategory = priceMatch ? priceMatch.category : row.category;
+      const canonicalRowCategory = priceMatch ? priceMatch.id : row.id;
       entriesMap[canonicalRowCategory] = newVal;
 
       const newEntries = Object.entries(entriesMap)
@@ -878,21 +878,29 @@ async function saveEditCardAddition() {
       var oldBalance = mData.currentBalance || 0;
       var newBalance = oldBalance + diff;
 
+      // Build price lookup for key normalization
+      var priceLookup = {};
+      (_profilePrices || []).forEach(function (p) {
+        priceLookup[p.category] = p.id;
+        priceLookup[p.id] = p.id;
+      });
+      function normKey(k) { return priceLookup[String(k)] || k; }
+
       var invData = invDoc.exists ? invDoc.data() : { entries: [] };
       var oldTotalCards = (invData.entries || []).reduce(function (s, e) { return s + (e.count || 0); }, 0);
       var entriesMap = {};
       (invData.entries || []).forEach(function (e) {
-        var key = e.category || "";
+        var key = normKey(e.category || "");
         entriesMap[key] = (entriesMap[key] || 0) + (e.count || 0);
       });
 
       // Reverse old entries, add new entries
       _editAdditionOriginalEntries.forEach(function (oe) {
-        var catKey = oe.category || oe.displayCategory || "";
+        var catKey = normKey(oe.category || oe.displayCategory || "");
         entriesMap[catKey] = Math.max(0, (entriesMap[catKey] || 0) - (oe.count || 0));
       });
       newEntries.forEach(function (ne, idx) {
-        var catKey = _editAdditionOriginalEntries[idx] ? (_editAdditionOriginalEntries[idx].category || _editAdditionOriginalEntries[idx].displayCategory || "") : "";
+        var catKey = _editAdditionOriginalEntries[idx] ? normKey(_editAdditionOriginalEntries[idx].category || _editAdditionOriginalEntries[idx].displayCategory || "") : "";
         if (catKey) {
           entriesMap[catKey] = (entriesMap[catKey] || 0) + ne.count;
         }
@@ -988,16 +996,24 @@ async function deleteCardAddition(txnId) {
       var oldBalance = mData.currentBalance || 0;
       var newBalance = oldBalance - totalValue;
 
+      // Build price lookup for key normalization
+      var priceLookup = {};
+      (_profilePrices || []).forEach(function (p) {
+        priceLookup[p.category] = p.id;
+        priceLookup[p.id] = p.id;
+      });
+      function normKey(k) { return priceLookup[String(k)] || k; }
+
       var invData = invDoc.exists ? invDoc.data() : { entries: [] };
       var entriesMap = {};
       (invData.entries || []).forEach(function (e) {
-        var key = e.category || "";
+        var key = normKey(e.category || "");
         entriesMap[key] = (entriesMap[key] || 0) + (e.count || 0);
       });
 
       // Reverse the old entries
       entries.forEach(function (oe) {
-        var catKey = oe.category || oe.displayCategory || "";
+        var catKey = normKey(oe.category || oe.displayCategory || "");
         entriesMap[catKey] = Math.max(0, (entriesMap[catKey] || 0) - (oe.count || 0));
       });
 
