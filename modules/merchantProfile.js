@@ -322,9 +322,9 @@ function renderAcctTable() {
 
     if (isEditing) {
       const numVal = parseInt(editCategoryValue) || 0;
-      const diff = numVal - row.cardsCount;
-      const diffText = diff >= 0 ? `+${diff}` : `${diff}`;
-      const diffColor = diff >= 0 ? "var(--success)" : "var(--danger)";
+      const newTotal = row.cardsCount + numVal;
+      const diffText = numVal >= 0 ? `+${numVal}` : `${numVal}`;
+      const diffColor = numVal >= 0 ? "var(--success)" : "var(--danger)";
 
       countCell = `
         <td style="background:rgba(59,130,246,0.1);padding:8px;vertical-align:middle;">
@@ -336,11 +336,11 @@ function renderAcctTable() {
             <button onclick="cancelInlineEdit()" style="background:var(--text-muted);color:white;border:none;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:13px;">×</button>
           </div>
           <div style="font-size:10px;color:var(--text-muted);text-align:center;">
-            السابق: ${row.cardsCount} &rarr; الجديد: <span id="previewNewVal">${numVal}</span> &rarr;
-            الفرق: <span id="previewDiffVal" style="color:${diffColor};font-weight:700;">${diffText}</span>
+            الإضافة: <span id="previewDiffVal" style="color:${diffColor};font-weight:700;">${diffText}</span>
+            &rarr; الإجمالي: <span id="previewNewVal">${newTotal}</span>
           </div>
         </td>`;
-      const editingProfit = numVal * row.profitPerCard;
+      const editingProfit = newTotal * row.profitPerCard;
       profitCell = `<td class="profit-cell" id="rowProfit_${row.id}" style="text-align:center;vertical-align:middle;font-weight:700;font-size:14px;color:var(--success);">${editingProfit.toLocaleString("ar-SA")} ج.م</td>`;
     } else {
       countCell = `
@@ -434,7 +434,7 @@ function renderAcctTable() {
 
 function startInlineEdit(rowId, currentCount) {
   editCategoryRow = rowId;
-  editCategoryValue = String(currentCount);
+  editCategoryValue = "0";
   renderAcctTable();
   setTimeout(() => {
     const inp = document.getElementById("inlineEditInput");
@@ -444,13 +444,13 @@ function startInlineEdit(rowId, currentCount) {
 
 function handleInlineEditInput(rowId, val, prevCount, price) {
   editCategoryValue = val;
-  const numVal = parseInt(val) || 0;
-  const diff = numVal - prevCount;
-  const diffText = diff >= 0 ? `+${diff}` : `${diff}`;
-  const diffColor = diff >= 0 ? "var(--success)" : "var(--danger)";
+  const addVal = parseInt(val) || 0;
+  const diffText = addVal >= 0 ? `+${addVal}` : `${addVal}`;
+  const diffColor = addVal >= 0 ? "var(--success)" : "var(--danger)";
+  const newTotal = prevCount + addVal;
 
   const newValSpan = document.getElementById("previewNewVal");
-  if (newValSpan) newValSpan.textContent = numVal;
+  if (newValSpan) newValSpan.textContent = newTotal;
 
   const diffValSpan = document.getElementById("previewDiffVal");
   if (diffValSpan) {
@@ -464,12 +464,12 @@ function handleInlineEditInput(rowId, val, prevCount, price) {
 
   const rowTotalSpan = document.getElementById(`rowTotal_${rowId}`);
   if (rowTotalSpan) {
-    rowTotalSpan.textContent = `${(numVal * price).toLocaleString("ar-SA")} ج.م`;
+    rowTotalSpan.textContent = `${(newTotal * price).toLocaleString("ar-SA")} ج.م`;
   }
 
   const rowProfitSpan = document.getElementById(`rowProfit_${rowId}`);
   if (rowProfitSpan) {
-    rowProfitSpan.textContent = `${(numVal * profitPerCard).toLocaleString("ar-SA")} ج.م`;
+    rowProfitSpan.textContent = `${(newTotal * profitPerCard).toLocaleString("ar-SA")} ج.م`;
   }
 
   // Update totals live in DOM
@@ -481,7 +481,7 @@ function handleInlineEditInput(rowId, val, prevCount, price) {
   let liveCategoryTotal = stats.grandCategoryTotal;
 
   if (editCategoryRow) {
-    const n = numVal;
+    const n = newTotal;
     liveCardsCount = stats.rows.reduce((s, r) => s + (r.id === editCategoryRow ? n : r.cardsCount), 0);
     liveCategoryTotal = stats.rows.reduce((s, r) => s + (r.id === editCategoryRow ? n * r.merchantPrice : r.rowTotal), 0);
   }
@@ -516,12 +516,12 @@ async function saveInlineEdit(rowId) {
   const row = stats.rows.find((r) => r.id === rowId);
   if (!row) return;
 
-  const newVal = parseInt(editCategoryValue) ?? 0;
-  if (isNaN(newVal) || newVal < 0) { showToast("يرجى إدخال عدد صحيح", "warning"); return; }
+  const diff = parseInt(editCategoryValue) ?? 0;
+  if (isNaN(diff)) { showToast("يرجى إدخال عدد صحيح", "warning"); return; }
+  if (diff === 0) { cancelInlineEdit(); return; }
 
   const oldVal = row.cardsCount;
-  const diff = newVal - oldVal;
-  if (diff === 0) { cancelInlineEdit(); return; }
+  var newVal = oldVal + diff;
 
   const priceDoc = _profilePrices.find((p) => p.id === rowId || p.category === row.category);
   if (!priceDoc) { showToast("فئة السعر غير متوفرة", "error"); return; }
