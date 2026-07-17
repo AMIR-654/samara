@@ -329,13 +329,15 @@ async function toggleMerchantCardStatus(id) {
     await recordAudit("update", "merchants", id, { status: m.status }, { status: newStatus },
       newStatus === "active" ? "تفعيل التاجر" : "إيقاف التاجر");
 
-    createMerchantNotification({
-      merchantId: id, userId: m.username,
-      type: newStatus === "active" ? "merchant_restored" : "merchant_archived",
-      title: newStatus === "active" ? "تفعيل التاجر" : "إيقاف التاجر",
-      body: `تم ${newStatus === "active" ? "تفعيل" : "إيقاف"} التاجر ${m.name}`,
-      relatedDocumentId: id,
-    });
+    try {
+      await createMerchantNotification({
+        merchantId: id, userId: m.username,
+        type: newStatus === "active" ? "merchant_restored" : "merchant_archived",
+        title: newStatus === "active" ? "تفعيل التاجر" : "إيقاف التاجر",
+        body: `تم ${newStatus === "active" ? "تفعيل" : "إيقاف"} التاجر ${m.name}`,
+        relatedDocumentId: id,
+      });
+    } catch (notifErr) { console.warn("[Accounts] Notification failed:", notifErr); }
 
     await loadMerchants();
     _accountsData = merchantsCache;
@@ -390,13 +392,15 @@ async function deleteMerchant(id) {
     const oldValue = { name: m.name, phone: m.phone, username: m.username, status: m.status };
     await recordAudit("delete", "merchants", id, oldValue, null, "حذف التاجر وكل بياناته بشكل نهائي");
 
-    createMerchantNotification({
-      merchantId: id, userId: m.username,
-      type: "merchant_deleted",
-      title: "حذف التاجر",
-      body: `تم حذف التاجر ${m.name} وكل بياناته بشكل نهائي`,
-      relatedDocumentId: id,
-    });
+    try {
+      await createMerchantNotification({
+        merchantId: id, userId: m.username,
+        type: "merchant_deleted",
+        title: "حذف التاجر",
+        body: `تم حذف التاجر ${m.name} وكل بياناته بشكل نهائي`,
+        relatedDocumentId: id,
+      });
+    } catch (notifErr) { console.warn("[Accounts] Notification failed:", notifErr); }
 
     showToast(`تم حذف التاجر "${m.name}" بنجاح`, "success");
 

@@ -382,11 +382,13 @@ async function saveCardPrices() {
 
     await batch.commit();
 
-    createMerchantNotification({
-      type: "prices_updated",
-      title: "تحديث أسعار الكروت",
-      body: "تم تعديل أسعار الكروت (إضافة / تعديل / حذف فئات أسعار)",
-    });
+    try {
+      await createMerchantNotification({
+        type: "prices_updated",
+        title: "تحديث أسعار الكروت",
+        body: "تم تعديل أسعار الكروت (إضافة / تعديل / حذف فئات أسعار)",
+      });
+    } catch (notifErr) { console.warn("[Inventory] Notification failed:", notifErr); }
 
     await loadInventoryPrices();
     if (typeof markAccountsDirty === "function") markAccountsDirty();

@@ -1009,17 +1009,19 @@ async function confirmResetMerchant() {
     const txSnap = await db.collection("merchant_transactions").doc(id).collection("items").get();
     txSnap.docs.forEach((d) => batch.delete(d.ref));
 
-    const resetMerchant = _profileMerchant?.username
-      ? _profileMerchant
-      : merchantsCache?.find((m) => m.id === id);
-    createMerchantNotification({
-      merchantId: id, userId: resetMerchant?.username || "all",
-      type: "merchant_reset",
-      title: "إعادة تعيين بيانات التاجر",
-      body: "تم إعادة تعيين جميع البيانات المحاسبية (العهدة، التركيبات، المعاملات)",
-      relatedDocumentId: id,
-    });
     await batch.commit();
+    try {
+      const resetMerchant = _profileMerchant?.username
+        ? _profileMerchant
+        : merchantsCache?.find((m) => m.id === id);
+      await createMerchantNotification({
+        merchantId: id, userId: resetMerchant?.username || "all",
+        type: "merchant_reset",
+        title: "إعادة تعيين بيانات التاجر",
+        body: "تم إعادة تعيين جميع البيانات المحاسبية (العهدة، التركيبات، المعاملات)",
+        relatedDocumentId: id,
+      });
+    } catch (notifErr) { console.warn("[Profile] Notification failed:", notifErr); }
     showToast("✅ تم إعادة تعيين التاجر", "success");
     await loadMerchants();
   } catch (err) {
@@ -1056,13 +1058,15 @@ async function toggleMerchantArchive() {
   try {
     await db.collection("merchants").doc(m.id).update({ status: "archived", updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
     await recordAudit("archive", "merchants", m.id, { status: m.status }, { status: "archived" }, "أرشفة");
-    createMerchantNotification({
-      merchantId: m.id, userId: m.username,
-      type: "merchant_archived",
-      title: "أرشفة التاجر",
-      body: `تم أرشفة التاجر ${m.name}`,
-      relatedDocumentId: m.id,
-    });
+    try {
+      await createMerchantNotification({
+        merchantId: m.id, userId: m.username,
+        type: "merchant_archived",
+        title: "أرشفة التاجر",
+        body: `تم أرشفة التاجر ${m.name}`,
+        relatedDocumentId: m.id,
+      });
+    } catch (notifErr) { console.warn("[Profile] Notification failed:", notifErr); }
     await loadMerchants();
     showToast(`✅ تم أرشفة "${m.name}"`, "success");
     backToMerchantList();

@@ -129,13 +129,15 @@ async function saveMerchant(e) {
       data.createdBy = "admin";
       const ref = await db.collection("merchants").add(data);
       await recordAudit("create", "merchants", ref.id, null, data, "إضافة تاجر جديد");
-      createMerchantNotification({
-        merchantId: ref.id, userId: data.username,
-        type: "merchant_created",
-        title: "إنشاء تاجر جديد",
-        body: `تم إنشاء تاجر جديد: ${data.name}`,
-        relatedDocumentId: ref.id,
-      });
+      try {
+        await createMerchantNotification({
+          merchantId: ref.id, userId: data.username,
+          type: "merchant_created",
+          title: "إنشاء تاجر جديد",
+          body: `تم إنشاء تاجر جديد: ${data.name}`,
+          relatedDocumentId: ref.id,
+        });
+      } catch (notifErr) { console.warn("[Merchants] Notification failed:", notifErr); }
       showToast("✅ تم إضافة التاجر بنجاح", "success");
     }
     $("merchantModal").classList.remove("open");
