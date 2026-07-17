@@ -111,14 +111,24 @@ async function saveInventory(e) {
       const invDoc = await transaction.get(invRef);
       const invData = invDoc.exists ? invDoc.data() : { entries: [] };
 
-      const mergedMap = {};
-      (invData.entries || []).forEach((e) => {
-        // Support both old (category name) and new (doc ID) formats
-        const key = e.category || "";
+      // Build name→ID lookup to normalize category keys
+      var catLookup = {};
+      inventoryCardPrices.forEach(function (p) {
+        catLookup[p.category] = p.id;
+      });
+      // Normalize a category value to its doc ID (if known)
+      function normalizeCat(cat) {
+        return catLookup[String(cat)] || cat;
+      }
+
+      var mergedMap = {};
+      (invData.entries || []).forEach(function (e) {
+        var key = normalizeCat(e.category || "");
         mergedMap[key] = (mergedMap[key] || 0) + (e.count || 0);
       });
-      entries.forEach((e) => {
-        mergedMap[e.category] = (mergedMap[e.category] || 0) + e.count;
+      entries.forEach(function (e) {
+        var key = normalizeCat(e.category);
+        mergedMap[key] = (mergedMap[key] || 0) + e.count;
       });
 
       const newEntries = Object.entries(mergedMap)

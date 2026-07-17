@@ -119,21 +119,28 @@ async function saveSettlement(e) {
         if (available < e.count) throw new Error(`المخزون غير كافٍ لفئة "${e.displayCategory || e.category}". المتوفر: ${available}، المطلوب: ${e.count}`);
       });
 
-      const mergedMap = {};
-      currentEntries.forEach((e) => {
-        mergedMap[e.category] = (mergedMap[e.category] || 0) + (e.count || 0);
+      // Build name→ID lookup to normalize category keys
+      var settleCatLookup = {};
+      inventoryCardPrices.forEach(function (p) {
+        settleCatLookup[p.category] = p.id;
       });
-      entries.forEach((e) => {
-        // Deduct using the matched key (may be doc ID or category name)
-        const matchedKey = Object.keys(mergedMap).find((k) =>
-          k === e.category || k === e.displayCategory
-        );
-        if (matchedKey) {
-          mergedMap[matchedKey] = Math.max(0, (mergedMap[matchedKey] || 0) - e.count);
+      function normalizeSettleCat(cat) {
+        return settleCatLookup[String(cat)] || cat;
+      }
+
+      var mergedMap = {};
+      currentEntries.forEach(function (e) {
+        var key = normalizeSettleCat(e.category || "");
+        mergedMap[key] = (mergedMap[key] || 0) + (e.count || 0);
+      });
+      entries.forEach(function (e) {
+        var key = normalizeSettleCat(e.category);
+        if (key) {
+          mergedMap[key] = Math.max(0, (mergedMap[key] || 0) - e.count);
         }
       });
 
-      const newEntries = Object.entries(mergedMap).filter(([, count]) => count > 0).map(([category, count]) => ({ category, count }));
+      var newEntries = Object.entries(mergedMap).filter(function (e) { return e[1] > 0; }).map(function (e) { return { category: e[0], count: e[1] }; });
       const newTotalCards = newEntries.reduce((s, e) => s + e.count, 0);
       const newTotalValue = newEntries.reduce((s, e) => {
         const priceDoc = inventoryCardPrices.find((p) => p.id === e.category || p.category === e.category);
