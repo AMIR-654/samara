@@ -328,6 +328,15 @@ async function toggleMerchantCardStatus(id) {
     });
     await recordAudit("update", "merchants", id, { status: m.status }, { status: newStatus },
       newStatus === "active" ? "تفعيل التاجر" : "إيقاف التاجر");
+
+    createMerchantNotification({
+      merchantId: id, userId: m.username,
+      type: newStatus === "active" ? "merchant_restored" : "merchant_archived",
+      title: newStatus === "active" ? "تفعيل التاجر" : "إيقاف التاجر",
+      body: `تم ${newStatus === "active" ? "تفعيل" : "إيقاف"} التاجر ${m.name}`,
+      relatedDocumentId: id,
+    });
+
     await loadMerchants();
     _accountsData = merchantsCache;
     _accountsDataDirty = false;
@@ -368,9 +377,11 @@ async function deleteMerchant(id) {
     txSnap.docs.forEach((d) => batch.delete(d.ref));
     batch.delete(db.collection("merchant_transactions").doc(id));
 
-    // 5. Delete merchant notifications
+    // 5. Delete merchant notifications (both collections)
     const notifSnap = await db.collection("merchant_notifications").where("merchantId", "==", id).get();
     notifSnap.docs.forEach((d) => batch.delete(d.ref));
+    const notifSnap2 = await db.collection("notifications").where("merchantId", "==", id).get();
+    notifSnap2.docs.forEach((d) => batch.delete(d.ref));
 
     // Commit all deletions in a single batch
     await batch.commit();
@@ -378,6 +389,14 @@ async function deleteMerchant(id) {
     // 6. Log the operation in the audit log
     const oldValue = { name: m.name, phone: m.phone, username: m.username, status: m.status };
     await recordAudit("delete", "merchants", id, oldValue, null, "حذف التاجر وكل بياناته بشكل نهائي");
+
+    createMerchantNotification({
+      merchantId: id, userId: m.username,
+      type: "merchant_deleted",
+      title: "حذف التاجر",
+      body: `تم حذف التاجر ${m.name} وكل بياناته بشكل نهائي`,
+      relatedDocumentId: id,
+    });
 
     showToast(`تم حذف التاجر "${m.name}" بنجاح`, "success");
 

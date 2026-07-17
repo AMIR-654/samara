@@ -381,6 +381,13 @@ async function saveCardPrices() {
     });
 
     await batch.commit();
+
+    createMerchantNotification({
+      type: "prices_updated",
+      title: "تحديث أسعار الكروت",
+      body: "تم تعديل أسعار الكروت (إضافة / تعديل / حذف فئات أسعار)",
+    });
+
     await loadInventoryPrices();
     if (typeof markAccountsDirty === "function") markAccountsDirty();
     $("cardPriceModal").classList.remove("open");

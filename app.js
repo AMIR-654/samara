@@ -993,9 +993,8 @@ $("notifForm").addEventListener("submit", async (e) => {
   statusMsg.textContent = "جاري تحضير الإرسال وإبلاغ الخادم...";
 
   try {
-    // إشعار داخل التطبيق فقط — يُكتب مباشرة بحالة "delivered"
-    // بدون أي اعتماد على Cloud Functions أو إرسال Push حقيقي.
-    // التطبيق (الموبايل) بيقرا من نفس الكولكشن ويعرضها في شاشة الإشعارات تلقائيًا.
+    // إشعار مع إرسال Push — يُكتب بحالة "pending" لتشغيل Cloud Function
+    // التي تقوم بإرسال الإشعار الفعلي عبر Expo Push
     await db.collection("notifications").add({
       userId: "all",
       title,
@@ -1003,7 +1002,7 @@ $("notifForm").addEventListener("submit", async (e) => {
       link: link || null,
       readStatus: false,
       opened: false,
-      deliveryStatus: "delivered",
+      deliveryStatus: "pending",
       createdAt: Date.now(),
     });
 
