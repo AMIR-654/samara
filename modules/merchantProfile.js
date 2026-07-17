@@ -376,15 +376,18 @@ function renderAcctTable() {
   if (supportsInstallations) {
     rowsHtml += `
       <tr onclick="openInstDetailsModal()" style="cursor:pointer;background:rgba(139,92,246,0.04);">
-        <td style="text-align:right;vertical-align:middle;padding:10px 12px;border-right:3px solid #8b5cf6;" colspan="2">
+        <td style="text-align:right;vertical-align:middle;padding:10px 12px;border-right:3px solid #8b5cf6;">
           <div style="font-weight:700;font-size:14px;color:#8b5cf6;">🔧 التركيبات — ${_selectedMonth}</div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">اضغط لعرض التفاصيل</div>
+        </td>
+        <td style="text-align:center;vertical-align:middle;font-weight:600;font-size:16px;color:#8b5cf6;">
+          ${instMonthlyCount.toLocaleString("ar-SA")}
         </td>
         <td style="text-align:center;vertical-align:middle;font-weight:700;font-size:15px;color:#8b5cf6;">
           ${instMonthlyTotal.toLocaleString("ar-SA")} ج.م
         </td>
-        <td style="text-align:center;vertical-align:middle;font-weight:600;font-size:14px;color:#8b5cf6;">
-          ${instMonthlyCount.toLocaleString("ar-SA")} تركيب
+        <td style="text-align:center;vertical-align:middle;font-size:13px;color:var(--text-muted);">
+          —
         </td>
       </tr>`;
   }
