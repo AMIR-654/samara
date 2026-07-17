@@ -1106,6 +1106,11 @@ async function saveEditCashCollection() {
     var time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
     var currentMonth = getLocalYearMonth();
 
+    // Get the original transaction to check its month
+    var origTx = (_profileTransactions || []).find(function (t) { return t.id === _editCashCollectionTxnId; });
+    var txMonth = origTx && origTx.date ? origTx.date.substring(0, 7) : currentMonth;
+    var isTxInCurrentMonth = txMonth === currentMonth;
+
     await db.runTransaction(async function (transaction) {
       var merchantRef = db.collection("merchants").doc(m.id);
       var merchantSnap = await transaction.get(merchantRef);
@@ -1117,17 +1122,21 @@ async function saveEditCashCollection() {
       // e.g., old=1000, new=700: diff=-300, balance += 300 (less collected)
       var newBalance = oldBalance - diff;
       var oldCollections = mData.totalCollections || 0;
-      var isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
 
-      transaction.update(merchantRef, {
+      var updateData = {
         totalCollections: oldCollections + diff,
         currentBalance: newBalance,
         updatedAt: now,
-        monthlyStatsPeriod: currentMonth,
-        monthlyCashCollected: isSameMonth
-          ? Math.max(0, (mData.monthlyCashCollected || 0) + diff)
-          : Math.max(0, diff > 0 ? diff : 0),
-      });
+      };
+      // If the edited transaction is in the current month, update monthlyCashCollected
+      if (isTxInCurrentMonth) {
+        updateData.monthlyCashCollected = Math.max(0, (mData.monthlyCashCollected || 0) + diff);
+        updateData.monthlyStatsPeriod = currentMonth;
+      }
+      // If different month, writeDenormalizedMonthlyStats should be called separately
+      // to recompute the affected month's stats
+
+      transaction.update(merchantRef, updateData);
 
       var txnNotes = "تعديل تحصيل: " + _editCashCollectionOldAmount.toLocaleString("ar-SA") + " ج.م → " + newAmount.toLocaleString("ar-SA") + " ج.م (الفرق: " + (diff >= 0 ? "+" : "") + diff.toLocaleString("ar-SA") + " ج.م)";
       var txnRef = db.collection("merchant_transactions").doc(m.id).collection("items").doc();
