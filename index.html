@@ -794,6 +794,17 @@
       </div>
     </section>
 
+    <!-- Edit Cash Collection Modal -->
+    <div class="modal-overlay" id="editCashCollectionModal">
+      <div class="modal" style="max-width:400px;">
+        <div class="modal-header">
+          <h3>تعديل تحصيل نقدي</h3>
+          <button class="modal-close" onclick="document.getElementById('editCashCollectionModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body" id="editCashCollectionModalContent" style="min-height:80px;"></div>
+      </div>
+    </div>
+
     <!-- Edit Card Addition Modal -->
     <div class="modal-overlay" id="editAdditionModal">
       <div class="modal" style="max-width:420px;">
@@ -1255,6 +1266,7 @@
   <script src="modules/inventory.js"></script>
   <script src="modules/settlements.js"></script>
   <script src="modules/installations.js"></script>
+  <script src="modules/accountingEngine.js"></script>
   <script src="modules/reports.js"></script>
   <script src="modules/accounts.js"></script>
   <script src="modules/merchantProfile.js"></script>

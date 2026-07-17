@@ -1036,6 +1036,128 @@ async function deleteCardAddition(txnId) {
   }
 }
 
+// ===== Edit Cash Collection =====
+
+let _editCashCollectionTxnId = null;
+let _editCashCollectionOldAmount = 0;
+
+function openEditCashCollection(txnId) {
+  const tx = (_profileTransactions || []).find(function (t) { return t.id === txnId; });
+  if (!tx) { showToast("لم يتم العثور على الحركة", "error"); return; }
+  _editCashCollectionTxnId = txnId;
+  _editCashCollectionOldAmount = Math.abs(tx.amount || 0);
+
+  var container = $("editCashCollectionModalContent");
+  if (!container) return;
+
+  var html = '<h4 style="margin:0 0 12px;font-size:15px;">✏️ تعديل تحصيل نقدي</h4>';
+  html += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">المبلغ الأصلي: <strong>' + _editCashCollectionOldAmount.toLocaleString("ar-SA") + ' ج.م</strong></div>';
+  html += '<label style="display:block;font-size:13px;font-weight:600;margin-bottom:6px;">المبلغ الجديد</label>';
+  html += '<input type="number" id="editCashCollectionInput" min="0" step="0.01" value="' + _editCashCollectionOldAmount + '" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:6px;font-size:16px;background:var(--surface);color:var(--text);margin-bottom:6px;box-sizing:border-box;" oninput="updateEditCashCollectionHint()" />';
+  html += '<div id="editCashCollectionHint" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;"></div>';
+  html += '<div style="display:flex;gap:8px;">';
+  html += '<button onclick="saveEditCashCollection()" style="flex:1;padding:10px;background:var(--primary);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;">💾 حفظ التعديل</button>';
+  html += '<button onclick="cancelEditCashCollection()" style="flex:1;padding:10px;background:var(--text-muted);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;">إلغاء</button>';
+  html += '</div>';
+
+  container.innerHTML = html;
+  $("editCashCollectionModal").classList.add("open");
+  updateEditCashCollectionHint();
+}
+
+function updateEditCashCollectionHint() {
+  var input = $("editCashCollectionInput");
+  if (!input) return;
+  var newVal = parseFloat(input.value) || 0;
+  var diff = newVal - _editCashCollectionOldAmount;
+  var hintEl = $("editCashCollectionHint");
+  if (!hintEl) return;
+  if (diff === 0) {
+    hintEl.innerHTML = 'لم يتم تغيير المبلغ';
+    hintEl.style.color = "var(--text-muted)";
+  } else {
+    var sign = diff > 0 ? "+" : "";
+    hintEl.innerHTML = 'الفرق: <strong style="color:' + (diff > 0 ? "var(--danger)" : "var(--success)") + ';">' + sign + diff.toLocaleString("ar-SA") + ' ج.م</strong> — سيتم ' + (diff > 0 ? "خصم" : "إضافة") + ' ' + Math.abs(diff).toLocaleString("ar-SA") + ' ج.م من الرصيد';
+    hintEl.style.color = "var(--text)";
+  }
+}
+
+function cancelEditCashCollection() {
+  _editCashCollectionTxnId = null;
+  _editCashCollectionOldAmount = 0;
+  $("editCashCollectionModal").classList.remove("open");
+}
+
+async function saveEditCashCollection() {
+  if (!_editCashCollectionTxnId) return;
+  var m = _profileMerchant;
+  if (!m) { showToast("بيانات التاجر غير متوفرة", "error"); return; }
+  var input = $("editCashCollectionInput");
+  if (!input) return;
+  var newAmount = parseFloat(input.value) || 0;
+  if (newAmount <= 0) { showToast("يجب إدخال مبلغ صحيح", "warning"); return; }
+
+  var diff = newAmount - _editCashCollectionOldAmount;
+  if (diff === 0) { showToast("لم يتم تغيير المبلغ", "info"); cancelEditCashCollection(); return; }
+
+  try {
+    var now = firebase.firestore.FieldValue.serverTimestamp();
+    var date = getLocalYearMonthDay();
+    var time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+    var currentMonth = getLocalYearMonth();
+
+    await db.runTransaction(async function (transaction) {
+      var merchantRef = db.collection("merchants").doc(m.id);
+      var merchantSnap = await transaction.get(merchantRef);
+      var mData = merchantSnap.exists ? merchantSnap.data() : {};
+      var oldBalance = mData.currentBalance || 0;
+      // If old collection was -oldAmount and new is -newAmount:
+      // balance change = oldAmount - newAmount = -(newAmount - oldAmount) = -diff
+      // e.g., old=1000, new=1500: diff=+500, balance -= 500 (more collected)
+      // e.g., old=1000, new=700: diff=-300, balance += 300 (less collected)
+      var newBalance = oldBalance - diff;
+      var oldCollections = mData.totalCollections || 0;
+      var isSameMonth = (mData.monthlyStatsPeriod || "") === currentMonth;
+
+      transaction.update(merchantRef, {
+        totalCollections: oldCollections + diff,
+        currentBalance: newBalance,
+        updatedAt: now,
+        monthlyStatsPeriod: currentMonth,
+        monthlyCashCollected: isSameMonth
+          ? Math.max(0, (mData.monthlyCashCollected || 0) + diff)
+          : Math.max(0, diff > 0 ? diff : 0),
+      });
+
+      var txnNotes = "تعديل تحصيل: " + _editCashCollectionOldAmount.toLocaleString("ar-SA") + " ج.م → " + newAmount.toLocaleString("ar-SA") + " ج.م (الفرق: " + (diff >= 0 ? "+" : "") + diff.toLocaleString("ar-SA") + " ج.م)";
+      var txnRef = db.collection("merchant_transactions").doc(m.id).collection("items").doc();
+      transaction.set(txnRef, {
+        id: txnRef.id,
+        type: "adjustment", merchantId: m.id,
+        amount: -diff,
+        balanceBefore: oldBalance,
+        balanceAfter: newBalance,
+        date: date, time: time, createdBy: "admin", notes: txnNotes,
+        metadata: { editedTransactionId: _editCashCollectionTxnId, oldAmount: _editCashCollectionOldAmount, newAmount: newAmount },
+        createdAt: now, updatedAt: now,
+      });
+
+      createMerchantNotification({
+        merchantId: m.id, userId: mData.username,
+        type: "adjustment", title: "تعديل تحصيل نقدي",
+        body: txnNotes,
+        relatedDocumentId: m.id,
+        transaction: transaction,
+      });
+    });
+
+    cancelEditCashCollection();
+    showToast("✅ تم تعديل التحصيل بنجاح", "success");
+  } catch (err) {
+    showToast("خطأ: " + err.message, "error");
+  }
+}
+
 // ===== Account Statement =====
 
 function renderAcctStatement() {
@@ -1078,12 +1200,19 @@ function renderAcctStatement() {
         const info = labels[t.type] || { label: t.type, icon: "📋", color: "#64748B" };
         const amt = Math.abs(t.amount || 0);
         const isPos = t.type === "card_inventory_added" || t.type === "installation";
-        var actions = (t.type === "card_inventory_added")
-          ? '<div style="display:flex;gap:2px;font-size:11px;margin-top:0;">' +
+        var isCardAddition = t.type === "card_inventory_added";
+        var isCashCollection = t.type === "cash_collection";
+        var actions = "";
+        if (isCardAddition) {
+          actions = '<div style="display:flex;gap:2px;font-size:11px;margin-top:0;">' +
             '<button onclick="openEditCardAddition(\'' + t.id + '\')" style="padding:1px 6px;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--primary);" title="تعديل الإضافة">✏️</button>' +
             '<button onclick="deleteCardAddition(\'' + t.id + '\')" style="padding:1px 6px;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--danger);" title="حذف الإضافة">🗑️</button>' +
-            '</div>'
-          : "";
+            '</div>';
+        } else if (isCashCollection) {
+          actions = '<div style="display:flex;gap:2px;font-size:11px;margin-top:0;">' +
+            '<button onclick="openEditCashCollection(\'' + t.id + '\')" style="padding:1px 6px;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--primary);" title="تعديل التحصيل">✏️</button>' +
+            '</div>';
+        }
         return `
           <div class="acct-statement-item">
             <div class="acct-statement-item-icon" style="background:${info.color}20;color:${info.color};">${info.icon}</div>
@@ -1302,3 +1431,7 @@ window.handleInlineEditInput = handleInlineEditInput;
 window.cancelInlineEdit = cancelInlineEdit;
 window.saveInlineEdit = saveInlineEdit;
 window.openInstDetailsModal = openInstDetailsModal;
+window.openEditCashCollection = openEditCashCollection;
+window.saveEditCashCollection = saveEditCashCollection;
+window.cancelEditCashCollection = cancelEditCashCollection;
+window.updateEditCashCollectionHint = updateEditCashCollectionHint;
