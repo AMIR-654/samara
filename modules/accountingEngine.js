@@ -44,6 +44,12 @@ var AccountingEngine = {
         installationsValue += Math.abs(tx.amount || 0);
       } else if (tx.type === "card_settlement") {
         settlementsValue += Math.abs(tx.amount || 0);
+      } else if (tx.type === "adjustment") {
+        // Adjustments are corrections to existing transactions.
+        // They don't represent new cards/collections/installations.
+        // Their effect is already reflected in the merchant doc's
+        // denormalized monthly fields (updated by edit/delete operations).
+        // Do NOT count them here — they would double-count.
       }
     });
 

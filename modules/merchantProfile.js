@@ -150,24 +150,6 @@ function startProfileListeners(merchantId) {
 // ===== Denormalize monthly stats to merchant doc (for list card display) =====
 // Uses AccountingEngine as single source of truth.
 
-async function writeDenormalizedMonthlyStats(merchantId) {
-  const currentMonth = getLocalYearMonth();
-  const bounds = AccountingEngine.getMonthStartEnd(currentMonth);
-  const txnSummary = AccountingEngine.computeMonthlySummary(_profileTransactions, bounds.start, bounds.end);
-  const instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, currentMonth);
-
-  try {
-    await db.collection("merchants").doc(merchantId).update({
-      monthlyStatsPeriod: currentMonth,
-      monthlyCardsAdded: txnSummary.cardsAdded,
-      monthlyCashCollected: txnSummary.cashCollected,
-      monthlyInstallationsValue: instMonthly.total,
-    });
-  } catch (err) {
-    console.warn("[Profile] Failed to write monthly stats:", err.message);
-  }
-}
-
 // ===== Skeleton =====
 
 function renderAcctSkeleton() {
@@ -236,17 +218,38 @@ function renderAcctHeader() {
 
 // ===== Monthly Summary Calculation (filtered by selected month) =====
 // Uses AccountingEngine as single source of truth.
+// For the CURRENT month, reads denormalized fields from merchant doc
+// (which are updated by every write operation including edits/deletes).
+// For past months, computes from raw transactions.
 
 function getFilteredMonthlySummary() {
   const { start, end } = getSelectedMonthRange();
-  const txnSummary = AccountingEngine.computeMonthlySummary(_profileTransactions, start, end);
-  const instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, _selectedMonth);
-  const acctStats = AccountingEngine.computeInventoryTable(_profileInventory, _profilePrices);
+  const m = _profileMerchant;
+  const isCurrentMonth = _selectedMonth === getLocalYearMonth();
+
+  if (isCurrentMonth && m) {
+    // Use denormalized fields — these are kept current by write operations
+    var cardsAdded = m.monthlyCardsAdded || 0;
+    var cashCollected = m.monthlyCashCollected || 0;
+    // Installation value always computed from records (denormalized field not reliable)
+    var instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, _selectedMonth);
+    var acctStats = AccountingEngine.computeInventoryTable(_profileInventory, _profilePrices);
+    return {
+      totalCardsAdded: cardsAdded,
+      totalCashCollected: cashCollected,
+      totalInstallationsValue: instMonthly.total,
+      totalExpectedProfit: acctStats.grandExpectedProfit,
+    };
+  }
+
+  // Past month: compute from raw transactions (source of truth)
+  var txnSummary = AccountingEngine.computeMonthlySummary(_profileTransactions, start, end);
+  var instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, _selectedMonth);
+  var acctStats = AccountingEngine.computeInventoryTable(_profileInventory, _profilePrices);
 
   return {
     totalCardsAdded: txnSummary.cardsAdded,
     totalCashCollected: txnSummary.cashCollected,
-    // Use installation records (by inst.date) — same source as table row & footer
     totalInstallationsValue: instMonthly.total,
     totalExpectedProfit: acctStats.grandExpectedProfit,
   };
@@ -289,7 +292,7 @@ function renderAcctSummary() {
     <div class="acct-summary-card" style="background:rgba(16,185,129,0.1);border:2px solid rgba(16,185,129,0.3);">
       <div class="acct-summary-icon" style="color:#10b981;">⚖️</div>
       <div class="acct-summary-value positive">${(_profileMerchant.currentBalance || 0).toLocaleString("ar-SA")} ج.م</div>
-      <div class="acct-summary-label">الرصيد الحالي</div>
+      <div class="acct-summary-label">اجمالي قيمه الكروت الحالي</div>
     </div>`;
 
   $("acctSummary").innerHTML = summaryHtml;
@@ -419,7 +422,7 @@ function renderAcctTable() {
             <div id="grandInstTotalCell" style="font-weight:800;font-size:18px;color:#8b5cf6;">${instMonthlyTotal.toLocaleString("ar-SA")} ج.م</div>
           </div>
           <div style="text-align:center;padding:8px;background:var(--surface);border-radius:6px;grid-column:span 3;border:2px solid rgba(16,185,129,0.2);">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">الرصيد الحالي</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">اجمالي قيمه الكروت الحالي</div>
             <div id="currentBalanceCell" style="font-weight:800;font-size:20px;color:#10b981;">${balance.toLocaleString("ar-SA")} ج.م</div>
           </div>
         </div>
@@ -588,11 +591,13 @@ async function saveInlineEdit(rowId) {
         currentBalance: newBalance,
         updatedAt: now,
       };
-      if (diff > 0) {
+      if (diff !== 0) {
         updateData.monthlyStatsPeriod = currentMonth;
-        updateData.monthlyCardsAdded = isSameMonth
-          ? firebase.firestore.FieldValue.increment(diff)
-          : diff;
+        if (isSameMonth) {
+          updateData.monthlyCardsAdded = firebase.firestore.FieldValue.increment(diff);
+        } else if (diff > 0) {
+          updateData.monthlyCardsAdded = diff;
+        }
       }
       transaction.update(merchantRef, updateData);
 
@@ -874,6 +879,7 @@ async function saveEditCardAddition() {
       var newBalance = oldBalance + diff;
 
       var invData = invDoc.exists ? invDoc.data() : { entries: [] };
+      var oldTotalCards = (invData.entries || []).reduce(function (s, e) { return s + (e.count || 0); }, 0);
       var entriesMap = {};
       (invData.entries || []).forEach(function (e) {
         var key = e.category || "";
@@ -907,12 +913,21 @@ async function saveEditCardAddition() {
         transaction.set(invRef, { merchantId: m.id, entries: updatedEntries, totalCards: newTotalCards, totalValue: newTotalInvValue, createdAt: now, updatedAt: now });
       }
 
-      transaction.update(merchantRef, {
+      var isSameMonthTx = _editAdditionTxnId
+        ? ((_profileTransactions || []).find(function (tx) { return tx.id === _editAdditionTxnId; })?.date || "").substring(0, 7) === currentMonth
+        : false;
+      var cardCountDiff = newTotalCards - oldTotalCards;
+      var upd = {
         totalCards: newTotalCards,
         totalCardValue: newTotalInvValue,
         currentBalance: newBalance,
         updatedAt: now,
-      });
+      };
+      if (isSameMonthTx) {
+        upd.monthlyCardsAdded = Math.max(0, (mData.monthlyCardsAdded || 0) + cardCountDiff);
+        upd.monthlyStatsPeriod = currentMonth;
+      }
+      transaction.update(merchantRef, upd);
 
       var txnNotes = "تعديل إضافة كروت: القيمة القديمة " + oldTotalValue.toLocaleString("ar-SA") + " ج.م → القيمة الجديدة " + newTotalValue.toLocaleString("ar-SA") + " ج.م (الفرق: " + (diff >= 0 ? "+" : "") + diff.toLocaleString("ar-SA") + " ج.م)";
       var txnRef = db.collection("merchant_transactions").doc(m.id).collection("items").doc();
@@ -923,7 +938,7 @@ async function saveEditCardAddition() {
         balanceBefore: oldBalance,
         balanceAfter: newBalance,
         date: date, time: time, createdBy: "admin", notes: txnNotes,
-        metadata: { editedTransactionId: _editAdditionTxnId, oldValue: oldTotalValue, newValue: newTotalValue },
+        metadata: { editedTransactionId: _editAdditionTxnId, oldValue: oldTotalValue, newValue: newTotalValue, oldCardCount: oldTotalCards, newCardCount: newTotalCards },
         createdAt: now, updatedAt: now,
       });
 
@@ -1001,12 +1016,20 @@ async function deleteCardAddition(txnId) {
         transaction.set(invRef, { merchantId: m.id, entries: updatedEntries, totalCards: newTotalCards, totalValue: newTotalInvValue, createdAt: now, updatedAt: now });
       }
 
-      transaction.update(merchantRef, {
+      var currentMonth = getLocalYearMonth();
+      var isSameMonthTx = (tx.date || "").substring(0, 7) === currentMonth;
+      var cardTotal = entries.reduce(function (s, e) { return s + (e.count || 0); }, 0);
+      var upd = {
         totalCards: newTotalCards,
         totalCardValue: newTotalInvValue,
         currentBalance: newBalance,
         updatedAt: now,
-      });
+      };
+      if (isSameMonthTx) {
+        upd.monthlyCardsAdded = Math.max(0, (mData.monthlyCardsAdded || 0) - cardTotal);
+        upd.monthlyStatsPeriod = currentMonth;
+      }
+      transaction.update(merchantRef, upd);
 
       var txnNotes = "حذف إضافة كروت: " + entries.map(function (e) { return (e.count || 0) + " كرت (" + (e.displayCategory || e.category) + ")"; }).join("، ");
       var txnRef = db.collection("merchant_transactions").doc(m.id).collection("items").doc();
@@ -1133,8 +1156,7 @@ async function saveEditCashCollection() {
         updateData.monthlyCashCollected = Math.max(0, (mData.monthlyCashCollected || 0) + diff);
         updateData.monthlyStatsPeriod = currentMonth;
       }
-      // If different month, writeDenormalizedMonthlyStats should be called separately
-      // to recompute the affected month's stats
+      // Past-month edits: no denormalized field change needed — past month reads from raw transactions
 
       transaction.update(merchantRef, updateData);
 
@@ -1208,7 +1230,7 @@ function renderAcctStatement() {
       ${groups[date].map((t) => {
         const info = labels[t.type] || { label: t.type, icon: "📋", color: "#64748B" };
         const amt = Math.abs(t.amount || 0);
-        const isPos = t.type === "card_inventory_added" || t.type === "installation";
+        const isPos = t.type === "adjustment" ? (t.amount || 0) >= 0 : t.type === "card_inventory_added" || t.type === "installation";
         var isCardAddition = t.type === "card_inventory_added";
         var isCashCollection = t.type === "cash_collection";
         var actions = "";
