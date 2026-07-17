@@ -794,6 +794,17 @@
       </div>
     </section>
 
+    <!-- Edit Card Addition Modal -->
+    <div class="modal-overlay" id="editAdditionModal">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-header">
+          <h3>تعديل إضافة كروت</h3>
+          <button class="modal-close" onclick="document.getElementById('editAdditionModal').classList.remove('open')">&times;</button>
+        </div>
+        <div class="modal-body" id="editAdditionModalContent" style="min-height:100px;"></div>
+      </div>
+    </div>
+
     <!-- Installation Details Modal -->
     <div class="modal-overlay" id="instDetailsModal">
       <div class="modal" style="max-width:600px;">
@@ -1238,7 +1249,6 @@
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.6.0/firebase-functions-compat.js"></script>
   <script src="app.js"></script>
-  <script src="modules/accountingMath.js"></script>
   <script src="modules/merchantNotifications.js"></script>
   <script src="modules/audit.js"></script>
   <script src="modules/merchants.js"></script>

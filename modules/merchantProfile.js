@@ -148,40 +148,20 @@ function startProfileListeners(merchantId) {
 }
 
 // ===== Denormalize monthly stats to merchant doc (for list card display) =====
+// Uses AccountingEngine as single source of truth.
 
 async function writeDenormalizedMonthlyStats(merchantId) {
   const currentMonth = getLocalYearMonth();
-  const { start, end } = getSelectedMonthRange();
-
-  let cardsAdded = 0;
-  let cashCollected = 0;
-  let installationsValue = 0;
-
-  const [y, m] = currentMonth.split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  const curEnd = `${currentMonth}-${String(lastDay).padStart(2, "0")}`;
-
-  const supportsInstallations = _profileMerchant && _profileMerchant.supportsInstallations !== false;
-
-  _profileTransactions.forEach((tx) => {
-    if (!tx.date || tx.date < `${currentMonth}-01` || tx.date > curEnd) return;
-    if (tx.type === "card_inventory_added") {
-      const meta = tx.metadata;
-      if (meta?.entries) cardsAdded += meta.entries.reduce((s, e) => s + (e.count || 0), 0);
-      else if (meta?.totalCards) cardsAdded += meta.totalCards;
-    } else if (tx.type === "cash_collection") {
-      cashCollected += Math.abs(tx.amount || 0);
-    } else if (tx.type === "installation" && supportsInstallations) {
-      installationsValue += Math.abs(tx.amount || 0);
-    }
-  });
+  const bounds = AccountingEngine.getMonthStartEnd(currentMonth);
+  const txnSummary = AccountingEngine.computeMonthlySummary(_profileTransactions, bounds.start, bounds.end);
+  const instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, currentMonth);
 
   try {
     await db.collection("merchants").doc(merchantId).update({
       monthlyStatsPeriod: currentMonth,
-      monthlyCardsAdded: cardsAdded,
-      monthlyCashCollected: cashCollected,
-      monthlyInstallationsValue: installationsValue,
+      monthlyCardsAdded: txnSummary.cardsAdded,
+      monthlyCashCollected: txnSummary.cashCollected,
+      monthlyInstallationsValue: instMonthly.total,
     });
   } catch (err) {
     console.warn("[Profile] Failed to write monthly stats:", err.message);
@@ -255,38 +235,21 @@ function renderAcctHeader() {
 }
 
 // ===== Monthly Summary Calculation (filtered by selected month) =====
+// Uses AccountingEngine as single source of truth.
 
 function getFilteredMonthlySummary() {
   const { start, end } = getSelectedMonthRange();
-  let totalCardsAdded = 0;
-  let totalCashCollected = 0;
-  let totalInstallationsValue = 0;
+  const txnSummary = AccountingEngine.computeMonthlySummary(_profileTransactions, start, end);
+  const instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, _selectedMonth);
+  const acctStats = AccountingEngine.computeInventoryTable(_profileInventory, _profilePrices);
 
-  const supportsInstallations = _profileMerchant && _profileMerchant.supportsInstallations !== false;
-
-  _profileTransactions.forEach((tx) => {
-    if (!tx.date || tx.date < start || tx.date > end) return;
-    if (tx.type === "card_inventory_added") {
-      const meta = tx.metadata;
-      if (meta?.entries) {
-        meta.entries.forEach((e) => {
-          totalCardsAdded += e.count || 0;
-        });
-      } else if (meta?.totalCards) {
-        totalCardsAdded += meta.totalCards;
-      }
-    } else if (tx.type === "cash_collection") {
-      totalCashCollected += Math.abs(tx.amount || 0);
-    } else if (tx.type === "installation" && supportsInstallations) {
-      totalInstallationsValue += Math.abs(tx.amount || 0);
-    }
-  });
-
-  // Expected profit from CURRENT inventory, not from transactions
-  const acctStats = getAccountingStats();
-  const totalExpectedProfit = acctStats.grandExpectedProfit;
-
-  return { totalCardsAdded, totalCashCollected, totalInstallationsValue, totalExpectedProfit };
+  return {
+    totalCardsAdded: txnSummary.cardsAdded,
+    totalCashCollected: txnSummary.cashCollected,
+    // Use installation records (by inst.date) — same source as table row & footer
+    totalInstallationsValue: instMonthly.total,
+    totalExpectedProfit: acctStats.grandExpectedProfit,
+  };
 }
 
 // ===== Summary Dashboard =====
@@ -333,47 +296,10 @@ function renderAcctSummary() {
 }
 
 // ===== Accounting Stats (live inventory — NEVER affected by month) =====
+// Uses AccountingEngine as single source of truth.
 
 function getAccountingStats() {
-  const inv = _profileInventory;
-  const categories = _profilePrices
-    .filter((p) => p.status !== "inactive" || (inv?.entries?.find((e) => e.category === p.id || e.category === p.category)?.count ?? 0) > 0)
-    .map((p) => p.category);
-
-  if (inv?.entries) {
-    inv.entries.forEach((e) => {
-      if (e.count > 0) {
-        const match = _profilePrices.find((p) => p.id === e.category || p.category === e.category);
-        const name = match ? match.category : e.category;
-        if (!categories.includes(name)) categories.push(name);
-      }
-    });
-  }
-
-  let grandCardsCount = 0;
-  let grandCategoryTotal = 0;
-  let grandExpectedProfit = 0;
-
-  const rows = categories.map((cat) => {
-    const priceDoc = _profilePrices.find((p) => p.category === cat || p.id === cat);
-    const merchantPrice = priceDoc ? (priceDoc.merchantPrice || 0) : 0;
-    const sellingPrice = priceDoc ? (priceDoc.sellingPrice || 0) : 0;
-    const docId = priceDoc ? priceDoc.id : cat;
-
-    const invEntry = inv?.entries?.find((e) => e.category === docId || e.category === cat);
-    const cardsCount = invEntry?.count ?? 0;
-    const rowTotal = cardsCount * merchantPrice;
-    const profitPerCard = sellingPrice - merchantPrice;
-    const categoryProfit = cardsCount * profitPerCard;
-
-    grandCardsCount += cardsCount;
-    grandCategoryTotal += rowTotal;
-    grandExpectedProfit += categoryProfit;
-
-    return { category: cat, id: docId, merchantPrice, sellingPrice, cardsCount, rowTotal, profitPerCard, categoryProfit };
-  });
-
-  return { rows, grandCardsCount, grandCategoryTotal, grandExpectedProfit };
+  return AccountingEngine.computeInventoryTable(_profileInventory, _profilePrices);
 }
 
 // ===== Accounting Table =====
@@ -440,21 +366,22 @@ function renderAcctTable() {
       </tr>`;
   }).join("");
 
-  // Installations row
-  const instCount = supportsInstallations ? _profileInstallations.length : 0;
-  const instTotal = supportsInstallations ? _profileInstallations.reduce((s, i) => s + (i.price || 0), 0) : 0;
+  // Installations row — uses MONTHLY data (same as summary card)
+  const instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, _selectedMonth);
+  const instMonthlyCount = supportsInstallations ? instMonthly.count : 0;
+  const instMonthlyTotal = supportsInstallations ? instMonthly.total : 0;
   if (supportsInstallations) {
     rowsHtml += `
       <tr onclick="openInstDetailsModal()" style="cursor:pointer;background:rgba(139,92,246,0.04);">
         <td style="text-align:right;vertical-align:middle;padding:10px 12px;border-right:3px solid #8b5cf6;" colspan="2">
-          <div style="font-weight:700;font-size:14px;color:#8b5cf6;">🔧 التركيبات</div>
+          <div style="font-weight:700;font-size:14px;color:#8b5cf6;">🔧 التركيبات — ${_selectedMonth}</div>
           <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">اضغط لعرض التفاصيل</div>
         </td>
         <td style="text-align:center;vertical-align:middle;font-weight:700;font-size:15px;color:#8b5cf6;">
-          ${instTotal.toLocaleString("ar-SA")} ج.م
+          ${instMonthlyTotal.toLocaleString("ar-SA")} ج.م
         </td>
         <td style="text-align:center;vertical-align:middle;font-weight:600;font-size:14px;color:#8b5cf6;">
-          ${instCount.toLocaleString("ar-SA")} تركيب
+          ${instMonthlyCount.toLocaleString("ar-SA")} تركيب
         </td>
       </tr>`;
   }
@@ -488,8 +415,8 @@ function renderAcctTable() {
             <div id="grandTotalCell" style="font-weight:800;font-size:18px;color:var(--primary);">${liveCategoryTotal.toLocaleString("ar-SA")} ج.م</div>
           </div>
           <div style="text-align:center;padding:8px;background:var(--surface);border-radius:6px;">
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">قيمة التركيبات</div>
-            <div id="grandInstTotalCell" style="font-weight:800;font-size:18px;color:#8b5cf6;">${instTotal.toLocaleString("ar-SA")} ج.م</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">قيمة التركيبات — ${_selectedMonth}</div>
+            <div id="grandInstTotalCell" style="font-weight:800;font-size:18px;color:#8b5cf6;">${instMonthlyTotal.toLocaleString("ar-SA")} ج.م</div>
           </div>
           <div style="text-align:center;padding:8px;background:var(--surface);border-radius:6px;grid-column:span 3;border:2px solid rgba(16,185,129,0.2);">
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:2px;">الرصيد الحالي</div>
@@ -544,7 +471,8 @@ function handleInlineEditInput(rowId, val, prevCount, price) {
 
   // Update totals live in DOM
   const supportsInstallations = _profileMerchant && _profileMerchant.supportsInstallations !== false;
-  const instTotal = supportsInstallations ? _profileInstallations.reduce((s, i) => s + (i.price || 0), 0) : 0;
+  const instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, _selectedMonth);
+  const instMonthlyTotal = supportsInstallations ? instMonthly.total : 0;
 
   let liveCardsCount = stats.grandCardsCount;
   let liveCategoryTotal = stats.grandCategoryTotal;
@@ -565,10 +493,10 @@ function handleInlineEditInput(rowId, val, prevCount, price) {
     grandTotalCell.textContent = `${liveCategoryTotal.toLocaleString("ar-SA")} ج.م`;
   }
 
-  // Update grand installations total cell
+  // Update grand installations total cell — monthly data
   const grandInstTotalCell = document.getElementById("grandInstTotalCell");
   if (grandInstTotalCell) {
-    grandInstTotalCell.textContent = `${instTotal.toLocaleString("ar-SA")} ج.م`;
+    grandInstTotalCell.textContent = `${instMonthlyTotal.toLocaleString("ar-SA")} ج.م`;
   }
 }
 
@@ -847,6 +775,267 @@ async function saveProfileSettlement() {
   }
 }
 
+// ===== Edit / Delete Card Addition =====
+
+let _editAdditionTxnId = null;
+let _editAdditionOriginalEntries = [];
+
+function openEditCardAddition(txnId) {
+  const tx = (_profileTransactions || []).find(function (t) { return t.id === txnId; });
+  if (!tx) { showToast("لم يتم العثور على الحركة", "error"); return; }
+  _editAdditionTxnId = txnId;
+  _editAdditionOriginalEntries = (tx.metadata && tx.metadata.entries) || [];
+
+  // Build the edit modal HTML
+  var container = $("editAdditionModalContent");
+  if (!container) return;
+
+  var html = '<h4 style="margin:0 0 12px;font-size:15px;">✏️ تعديل إضافة كروت</h4>';
+  html += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">القيم الأصلية معروضة — قم بتعديل العدد المطلوب لكل فئة</div>';
+
+  _editAdditionOriginalEntries.forEach(function (entry, idx) {
+    var catName = entry.displayCategory || entry.category;
+    var priceDoc = _profilePrices.find(function (p) { return p.id === entry.category || p.category === entry.category; });
+    var price = priceDoc ? priceDoc.merchantPrice : (entry.price || 0);
+    var displayCat = priceDoc ? priceDoc.category : catName;
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">';
+    html += '<span style="flex:1;font-weight:600;font-size:13px;">فئة ' + escapeHtml(displayCat) + ' (' + price.toLocaleString("ar-SA") + ' ج.م)</span>';
+    html += '<input type="number" min="0" class="edit-addition-count" data-price="' + price + '" value="' + (entry.count || 0) + '" data-original="' + (entry.count || 0) + '" style="width:70px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;text-align:center;font-size:14px;" />';
+    html += '<span style="font-size:11px;color:var(--text-muted);">كرت</span>';
+    html += '</div>';
+  });
+
+  html += '<div style="display:flex;gap:8px;margin-top:14px;">';
+  html += '<button onclick="saveEditCardAddition()" style="flex:1;padding:10px;background:var(--primary);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;">💾 حفظ التعديل</button>';
+  html += '<button onclick="cancelEditCardAddition()" style="flex:1;padding:10px;background:var(--text-muted);color:white;border:none;border-radius:6px;font-weight:700;cursor:pointer;">إلغاء</button>';
+  html += '</div>';
+
+  container.innerHTML = html;
+  $("editAdditionModal").classList.add("open");
+}
+
+function cancelEditCardAddition() {
+  _editAdditionTxnId = null;
+  _editAdditionOriginalEntries = [];
+  $("editAdditionModal").classList.remove("open");
+}
+
+async function saveEditCardAddition() {
+  if (!_editAdditionTxnId) return;
+  var m = _profileMerchant;
+  if (!m) { showToast("بيانات التاجر غير متوفرة", "error"); return; }
+
+  // Read new values from inputs
+  var inputs = document.querySelectorAll(".edit-addition-count");
+  var newEntries = [];
+  var oldTotalValue = 0;
+  var newTotalValue = 0;
+
+  inputs.forEach(function (input) {
+    var newCount = parseInt(input.value) || 0;
+    var oldCount = parseInt(input.dataset.original) || 0;
+    var price = parseFloat(input.dataset.price) || 0;
+    oldTotalValue += oldCount * price;
+    newTotalValue += newCount * price;
+    if (newCount > 0) {
+      newEntries.push({ count: newCount, price: price });
+    }
+  });
+
+  if (newTotalValue === oldTotalValue) {
+    showToast("لم يتم تغيير أي قيم", "info");
+    cancelEditCardAddition();
+    return;
+  }
+
+  if (!newEntries.length) {
+    showToast("يجب إدخال كرت واحد على الأقل", "warning");
+    return;
+  }
+
+  try {
+    var now = firebase.firestore.FieldValue.serverTimestamp();
+    var date = getLocalYearMonthDay();
+    var time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+    var currentMonth = getLocalYearMonth();
+    var diff = newTotalValue - oldTotalValue;
+
+    await db.runTransaction(async function (transaction) {
+      var invRef = db.collection("merchant_inventory").doc(m.id);
+      var merchantRef = db.collection("merchants").doc(m.id);
+
+      var [invDoc, merchantDocSnap] = await Promise.all([
+        transaction.get(invRef),
+        transaction.get(merchantRef),
+      ]);
+
+      var mData = merchantDocSnap.exists ? merchantDocSnap.data() : {};
+      var oldBalance = mData.currentBalance || 0;
+      var newBalance = oldBalance + diff;
+
+      var invData = invDoc.exists ? invDoc.data() : { entries: [] };
+      var entriesMap = {};
+      (invData.entries || []).forEach(function (e) {
+        var key = e.category || "";
+        entriesMap[key] = (entriesMap[key] || 0) + (e.count || 0);
+      });
+
+      // Reverse old entries, add new entries
+      _editAdditionOriginalEntries.forEach(function (oe) {
+        var catKey = oe.category || oe.displayCategory || "";
+        entriesMap[catKey] = Math.max(0, (entriesMap[catKey] || 0) - (oe.count || 0));
+      });
+      newEntries.forEach(function (ne, idx) {
+        var catKey = _editAdditionOriginalEntries[idx] ? (_editAdditionOriginalEntries[idx].category || _editAdditionOriginalEntries[idx].displayCategory || "") : "";
+        if (catKey) {
+          entriesMap[catKey] = (entriesMap[catKey] || 0) + ne.count;
+        }
+      });
+
+      var updatedEntries = Object.entries(entriesMap)
+        .filter(function (e) { return e[1] > 0; })
+        .map(function (e) { return { category: e[0], count: e[1] }; });
+      var newTotalCards = updatedEntries.reduce(function (s, e) { return s + e.count; }, 0);
+      var newTotalInvValue = updatedEntries.reduce(function (s, e) {
+        var p = _profilePrices.find(function (cp) { return cp.id === e.category || cp.category === e.category; });
+        return s + e.count * (p ? p.merchantPrice : 0);
+      }, 0);
+
+      if (invDoc.exists) {
+        transaction.update(invRef, { entries: updatedEntries, totalCards: newTotalCards, totalValue: newTotalInvValue, updatedAt: now });
+      } else {
+        transaction.set(invRef, { merchantId: m.id, entries: updatedEntries, totalCards: newTotalCards, totalValue: newTotalInvValue, createdAt: now, updatedAt: now });
+      }
+
+      transaction.update(merchantRef, {
+        totalCards: newTotalCards,
+        totalCardValue: newTotalInvValue,
+        currentBalance: newBalance,
+        updatedAt: now,
+      });
+
+      var txnNotes = "تعديل إضافة كروت: القيمة القديمة " + oldTotalValue.toLocaleString("ar-SA") + " ج.م → القيمة الجديدة " + newTotalValue.toLocaleString("ar-SA") + " ج.م (الفرق: " + (diff >= 0 ? "+" : "") + diff.toLocaleString("ar-SA") + " ج.م)";
+      var txnRef = db.collection("merchant_transactions").doc(m.id).collection("items").doc();
+      transaction.set(txnRef, {
+        id: txnRef.id,
+        type: "adjustment", merchantId: m.id,
+        amount: diff,
+        balanceBefore: oldBalance,
+        balanceAfter: newBalance,
+        date: date, time: time, createdBy: "admin", notes: txnNotes,
+        metadata: { editedTransactionId: _editAdditionTxnId, oldValue: oldTotalValue, newValue: newTotalValue },
+        createdAt: now, updatedAt: now,
+      });
+
+      createMerchantNotification({
+        merchantId: m.id, userId: mData.username,
+        type: "adjustment", title: "تعديل إضافة كروت",
+        body: txnNotes,
+        relatedDocumentId: m.id,
+        transaction: transaction,
+      });
+    });
+
+    cancelEditCardAddition();
+    showToast("✅ تم تعديل الإضافة بنجاح", "success");
+  } catch (err) {
+    showToast("خطأ: " + err.message, "error");
+  }
+}
+
+async function deleteCardAddition(txnId) {
+  var m = _profileMerchant;
+  if (!m) return;
+
+  var tx = (_profileTransactions || []).find(function (t) { return t.id === txnId; });
+  if (!tx) { showToast("لم يتم العثور على الحركة", "error"); return; }
+
+  var entries = (tx.metadata && tx.metadata.entries) || [];
+  var totalValue = entries.reduce(function (s, e) { return s + (e.count || 0) * (e.price || 0); }, 0);
+
+  if (!confirm("هل أنت متأكد من حذف هذه الإضافة؟\n\nسيتم عكس تأثيرها بالكامل:\nالقيمة: " + totalValue.toLocaleString("ar-SA") + " ج.م\nعدد الكروت: " + entries.reduce(function (s, e) { return s + (e.count || 0); }, 0))) return;
+
+  try {
+    var now = firebase.firestore.FieldValue.serverTimestamp();
+    var date = getLocalYearMonthDay();
+    var time = new Date().toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+
+    await db.runTransaction(async function (transaction) {
+      var invRef = db.collection("merchant_inventory").doc(m.id);
+      var merchantRef = db.collection("merchants").doc(m.id);
+
+      var [invDoc, merchantDocSnap] = await Promise.all([
+        transaction.get(invRef),
+        transaction.get(merchantRef),
+      ]);
+
+      var mData = merchantDocSnap.exists ? merchantDocSnap.data() : {};
+      var oldBalance = mData.currentBalance || 0;
+      var newBalance = oldBalance - totalValue;
+
+      var invData = invDoc.exists ? invDoc.data() : { entries: [] };
+      var entriesMap = {};
+      (invData.entries || []).forEach(function (e) {
+        var key = e.category || "";
+        entriesMap[key] = (entriesMap[key] || 0) + (e.count || 0);
+      });
+
+      // Reverse the old entries
+      entries.forEach(function (oe) {
+        var catKey = oe.category || oe.displayCategory || "";
+        entriesMap[catKey] = Math.max(0, (entriesMap[catKey] || 0) - (oe.count || 0));
+      });
+
+      var updatedEntries = Object.entries(entriesMap)
+        .filter(function (e) { return e[1] > 0; })
+        .map(function (e) { return { category: e[0], count: e[1] }; });
+      var newTotalCards = updatedEntries.reduce(function (s, e) { return s + e.count; }, 0);
+      var newTotalInvValue = updatedEntries.reduce(function (s, e) {
+        var p = _profilePrices.find(function (cp) { return cp.id === e.category || cp.category === e.category; });
+        return s + e.count * (p ? p.merchantPrice : 0);
+      }, 0);
+
+      if (invDoc.exists) {
+        transaction.update(invRef, { entries: updatedEntries, totalCards: newTotalCards, totalValue: newTotalInvValue, updatedAt: now });
+      } else {
+        transaction.set(invRef, { merchantId: m.id, entries: updatedEntries, totalCards: newTotalCards, totalValue: newTotalInvValue, createdAt: now, updatedAt: now });
+      }
+
+      transaction.update(merchantRef, {
+        totalCards: newTotalCards,
+        totalCardValue: newTotalInvValue,
+        currentBalance: newBalance,
+        updatedAt: now,
+      });
+
+      var txnNotes = "حذف إضافة كروت: " + entries.map(function (e) { return (e.count || 0) + " كرت (" + (e.displayCategory || e.category) + ")"; }).join("، ");
+      var txnRef = db.collection("merchant_transactions").doc(m.id).collection("items").doc();
+      transaction.set(txnRef, {
+        id: txnRef.id,
+        type: "adjustment", merchantId: m.id,
+        amount: -totalValue,
+        balanceBefore: oldBalance,
+        balanceAfter: newBalance,
+        date: date, time: time, createdBy: "admin", notes: txnNotes,
+        metadata: { deletedTransactionId: txnId, entries: entries, totalValue: totalValue },
+        createdAt: now, updatedAt: now,
+      });
+
+      createMerchantNotification({
+        merchantId: m.id, userId: mData.username,
+        type: "adjustment", title: "حذف إضافة كروت",
+        body: txnNotes,
+        relatedDocumentId: m.id,
+        transaction: transaction,
+      });
+    });
+
+    showToast("✅ تم حذف الإضافة وعكس تأثيرها", "success");
+  } catch (err) {
+    showToast("خطأ: " + err.message, "error");
+  }
+}
+
 // ===== Account Statement =====
 
 function renderAcctStatement() {
@@ -889,11 +1078,17 @@ function renderAcctStatement() {
         const info = labels[t.type] || { label: t.type, icon: "📋", color: "#64748B" };
         const amt = Math.abs(t.amount || 0);
         const isPos = t.type === "card_inventory_added" || t.type === "installation";
+        var actions = (t.type === "card_inventory_added")
+          ? '<div style="display:flex;gap:2px;font-size:11px;margin-top:0;">' +
+            '<button onclick="openEditCardAddition(\'' + t.id + '\')" style="padding:1px 6px;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--primary);" title="تعديل الإضافة">✏️</button>' +
+            '<button onclick="deleteCardAddition(\'' + t.id + '\')" style="padding:1px 6px;background:none;border:1px solid var(--border);border-radius:3px;cursor:pointer;color:var(--danger);" title="حذف الإضافة">🗑️</button>' +
+            '</div>'
+          : "";
         return `
           <div class="acct-statement-item">
             <div class="acct-statement-item-icon" style="background:${info.color}20;color:${info.color};">${info.icon}</div>
             <div class="acct-statement-item-body">
-              <div class="acct-statement-item-type">${info.label}</div>
+              <div class="acct-statement-item-type">${info.label} ${actions}</div>
               <div class="acct-statement-item-notes">${escapeHtml(t.notes || "")}</div>
             </div>
             <div class="acct-statement-item-amount" style="color:${isPos ? "var(--success)" : "var(--danger)"};font-weight:700;">
@@ -927,10 +1122,11 @@ function openInstDetailsModal() {
 function renderAcctInstallations() {
   const container = $("instDetailsList");
   if (!container) return;
-  const insts = _profileInstallations || [];
+  const instMonthly = AccountingEngine.computeInstallationsMonthly(_profileInstallations, _selectedMonth);
+  const insts = instMonthly.all;
 
   if (!insts.length) {
-    container.innerHTML = `<p style="text-align:center;padding:24px;color:var(--text-muted);">لا توجد تركيبات مسجلة</p>`;
+    container.innerHTML = `<p style="text-align:center;padding:24px;color:var(--text-muted);">لا توجد تركيبات لهذا الشهر (${_selectedMonth})</p>`;
     return;
   }
 

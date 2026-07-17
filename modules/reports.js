@@ -65,6 +65,35 @@ function getTransactionTypeLabel(type) {
   return labels[type] || type || "-";
 }
 
+function renderReportMetrics(txns) {
+  // Use AccountingEngine for all summary calculations
+  var settlementTotal = AccountingEngine.computeSettlementTotal(txns);
+  var summary = AccountingEngine.computeMonthlySummary(txns, null, null);
+  var cardsValue = 0;
+  (txns || []).forEach(function (t) {
+    if (t.type === "card_inventory_added") cardsValue += Math.abs(t.amount || 0);
+  });
+  return `
+    <div class="metric-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px;">
+      <div style="font-size:12px;color:var(--text-muted);">قيمة الكروت المضافة</div>
+      <div style="font-size:18px;font-weight:700;color:var(--success);">
+        ${cardsValue.toLocaleString("ar-SA")} ج.م
+      </div>
+    </div>
+    <div class="metric-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px;">
+      <div style="font-size:12px;color:var(--text-muted);">قيمة تسويات الكروت</div>
+      <div style="font-size:18px;font-weight:700;color:var(--danger);">
+        ${settlementTotal.toLocaleString("ar-SA")} ج.م
+      </div>
+    </div>
+    <div class="metric-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px;">
+      <div style="font-size:12px;color:var(--text-muted);">قيمة التركيبات</div>
+      <div style="font-size:18px;font-weight:700;">
+        ${summary.installationsValue.toLocaleString("ar-SA")} ج.م
+      </div>
+    </div>`;
+}
+
 function openStatementModal(merchantId) {
   const merchant = merchantsCache.find((m) => m.id === merchantId);
   currentReportMerchantId = merchantId;
@@ -98,24 +127,7 @@ function renderStatementContent(txns) {
       <button class="btn btn-sm" onclick="printStatement()" style="background:var(--bg);color:var(--text);border:1px solid var(--border);padding:8px 16px;border-radius:var(--radius-xs);cursor:pointer;">🖨️ طباعة</button>
     </div>
     <div style="margin-bottom:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
-      <div class="metric-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px;">
-        <div style="font-size:12px;color:var(--text-muted);">قيمة الكروت المضافة</div>
-        <div style="font-size:18px;font-weight:700;color:var(--success);">
-          ${txns.filter(t => t.type === "card_inventory_added").reduce((s, t) => s + Math.abs(t.amount || 0), 0).toLocaleString("ar-SA")} ج.م
-        </div>
-      </div>
-      <div class="metric-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px;">
-        <div style="font-size:12px;color:var(--text-muted);">قيمة تسويات الكروت</div>
-        <div style="font-size:18px;font-weight:700;color:var(--danger);">
-          ${txns.filter(t => t.type === "card_settlement").reduce((s, t) => s + Math.abs(t.amount || 0), 0).toLocaleString("ar-SA")} ج.م
-        </div>
-      </div>
-      <div class="metric-card" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-xs);padding:12px;">
-        <div style="font-size:12px;color:var(--text-muted);">قيمة التركيبات</div>
-        <div style="font-size:18px;font-weight:700;">
-          ${txns.filter(t => t.type === "installation").reduce((s, t) => s + Math.abs(t.amount || 0), 0).toLocaleString("ar-SA")} ج.م
-        </div>
-      </div>
+      ${renderReportMetrics(txns)}
     </div>
     <div id="stmtTableContainer"></div>
   `;
