@@ -4,10 +4,14 @@ async function loadMerchantInstallations(merchantId) {
   try {
     const snap = await db.collection("merchant_installations")
       .where("merchantId", "==", merchantId)
-      .orderBy("createdAt", "desc")
-      .limit(50)
       .get();
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    list.sort((a, b) => {
+      const aVal = a.createdAt && typeof a.createdAt.toMillis === "function" ? a.createdAt.toMillis() : (a.createdAt || 0);
+      const bVal = b.createdAt && typeof b.createdAt.toMillis === "function" ? b.createdAt.toMillis() : (b.createdAt || 0);
+      return bVal - aVal;
+    });
+    return list.slice(0, 50);
   } catch (err) {
     console.warn("[Installations] Load failed:", err.message);
     return [];
